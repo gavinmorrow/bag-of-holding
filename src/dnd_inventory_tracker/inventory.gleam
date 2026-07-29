@@ -11,14 +11,14 @@ pub type Inventory {
   )
 }
 
-const inventory_default = Inventory(
+pub const default = Inventory(
   name: "",
   items: [],
   weight_limit: Pounds(0),
   coins_count_towards_weight_limit: False,
 )
 
-pub fn inventory_to_json(inventory: Inventory) -> json.Json {
+pub fn to_json(inventory: Inventory) -> json.Json {
   let Inventory(name:, items:, weight_limit:, coins_count_towards_weight_limit:) =
     inventory
 
@@ -38,7 +38,7 @@ pub fn decoder() -> decode.Decoder(Inventory) {
   use version <- decode.field("version", decode.string)
   use <- bool.guard(
     when: version != "1.0",
-    return: decode.failure(inventory_default, "Inventory v1.0"),
+    return: decode.failure(default, "Inventory v1.0"),
   )
 
   use name <- decode.field("name", decode.string)

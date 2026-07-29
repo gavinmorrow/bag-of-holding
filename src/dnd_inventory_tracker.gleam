@@ -1,7 +1,8 @@
+import dnd_inventory_tracker/inventory.{type Inventory}
 import dnd_inventory_tracker/storage.{type Storage, Storage}
 import gleam/dict
-import gleam/javascript/promise
 import gleam/list
+import gleam/option.{type Option}
 import gleam/string
 import lustre
 import lustre/attribute
@@ -19,8 +20,16 @@ pub fn main() -> Nil {
 
 type Model {
   Loading
-  Loaded(storage: Storage)
+  Loaded(LoadedModel)
   FailedToLoad(error: storage.Error)
+}
+
+type LoadedModel {
+  LoadedModel(
+    storage: Storage,
+    selected_inventory: Option(String),
+    creating_inventory: Bool,
+  )
 }
 
 type Message {
@@ -28,37 +37,70 @@ type Message {
   StorageFailedToLoad(error: storage.Error)
   UserClickedCreateNewInventory
   UserSelectedInventory(name: String)
+  InventoryAdded(inventory: Inventory)
+  InventoryCreationFailed(error: storage.Error)
 }
 
 fn init(_args: #()) -> #(Model, Effect(Message)) {
-  #(Loading, load_storage())
-}
-
-fn load_storage() -> Effect(Message) {
-  effect.from(fn(dispatch) {
-    promise.tap(storage.load(), fn(storage) {
-      case storage {
-        Ok(storage) -> dispatch(StorageLoaded(storage:))
-        Error(error) -> dispatch(StorageFailedToLoad(error:))
-      }
-    })
-    Nil
-  })
+  #(Loading, storage.load(StorageLoaded, StorageFailedToLoad))
 }
 
 fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
-  case message {
-    StorageLoaded(storage:) -> #(Loaded(storage:), effect.none())
-    StorageFailedToLoad(error:) -> #(FailedToLoad(error:), effect.none())
-    UserClickedCreateNewInventory -> todo
-    UserSelectedInventory(name:) -> todo
+  case model, message {
+    _, StorageLoaded(storage:) -> #(
+      Loaded(LoadedModel(
+        storage:,
+        selected_inventory: option.None,
+        creating_inventory: False,
+      )),
+      effect.none(),
+    )
+    _, StorageFailedToLoad(error:) -> #(FailedToLoad(error:), effect.none())
+    Loaded(model), UserClickedCreateNewInventory if !model.creating_inventory -> {
+      #(
+        Loaded(LoadedModel(..model, creating_inventory: True)),
+        storage.create_inventory(
+          model.storage,
+          InventoryAdded,
+          InventoryCreationFailed,
+        ),
+      )
+    }
+    Loaded(model), UserSelectedInventory(name:) -> #(
+      Loaded(LoadedModel(..model, selected_inventory: option.Some(name))),
+      effect.none(),
+    )
+    Loaded(LoadedModel(
+      storage: Storage(inventories:),
+      selected_inventory: _,
+      creating_inventory: _,
+    )),
+      InventoryAdded(inventory:)
+    -> #(
+      Loaded(LoadedModel(
+        storage: Storage(inventories: dict.insert(
+          inventory,
+          for: inventory.name,
+          into: inventories,
+        )),
+        selected_inventory: option.Some(inventory.name),
+        creating_inventory: False,
+      )),
+      effect.none(),
+    )
+    _, InventoryCreationFailed(error:) -> todo
+
+    _, UserClickedCreateNewInventory
+    | _, UserSelectedInventory(name: _)
+    | _, InventoryAdded(inventory: _)
+    -> #(model, effect.none())
   }
 }
 
 fn view(model: Model) -> Element(Message) {
   case model {
     Loading -> loading_view()
-    Loaded(storage:) -> loaded_view(storage)
+    Loaded(model) -> loaded_view(model)
     FailedToLoad(error:) -> failed_to_load_view(error)
   }
 }
@@ -67,34 +109,53 @@ fn loading_view() -> Element(Message) {
   html.p([], [html.text("Loading...")])
 }
 
-fn loaded_view(storage: Storage) -> Element(Message) {
-  let Storage(inventories:) = storage
+fn loaded_view(model: LoadedModel) -> Element(Message) {
+  let LoadedModel(
+    storage: Storage(inventories:),
+    selected_inventory:,
+    creating_inventory:,
+  ) = model
+
   let inventory_names =
     dict.keys(inventories)
     |> list.map(fn(name) { html.option([attribute.value(name)], name) })
 
-  html.section([], [
-    html.button([event.on_click(UserClickedCreateNewInventory)], [
-      html.text("Create new inventory"),
-    ]),
-    html.div([], [
-      html.label([attribute.for("inventory-select")], [
-        html.text("Choose which inventory to view: "),
-      ]),
-      html.select(
+  let inventory = case selected_inventory {
+    option.Some(name) -> html.p([], [html.text("selected inventory: " <> name)])
+    option.None -> element.none()
+  }
+
+  html.div([], [
+    html.section([], [
+      html.button(
         [
-          attribute.id("inventory-select"),
-          attribute.name("inventory"),
-          event.on_change(UserSelectedInventory),
+          event.on_click(UserClickedCreateNewInventory),
+          attribute.disabled(creating_inventory),
         ],
-        case inventory_names {
-          [] -> [
-            html.option([attribute.value("")], "--No inventories found--"),
-          ]
-          _ -> inventory_names
-        },
+        [
+          html.text("Create new inventory"),
+        ],
       ),
+      html.div([], [
+        html.label([attribute.for("inventory-select")], [
+          html.text("Choose which inventory to view: "),
+        ]),
+        html.select(
+          [
+            attribute.id("inventory-select"),
+            attribute.name("inventory"),
+            event.on_change(UserSelectedInventory),
+          ],
+          case inventory_names {
+            [] -> [
+              html.option([attribute.value("")], "--No inventories found--"),
+            ]
+            _ -> inventory_names
+          },
+        ),
+      ]),
     ]),
+    inventory,
   ])
 }
 

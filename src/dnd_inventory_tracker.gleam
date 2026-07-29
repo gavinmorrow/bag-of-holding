@@ -1,7 +1,10 @@
-import dnd_inventory_tracker/storage.{type Storage}
+import dnd_inventory_tracker/storage.{type Storage, Storage}
+import gleam/dict
 import gleam/javascript/promise
+import gleam/list
 import gleam/string
 import lustre
+import lustre/attribute
 import lustre/effect.{type Effect}
 import lustre/element.{type Element}
 import lustre/element/html
@@ -60,7 +63,25 @@ fn loading_view() -> Element(Message) {
 }
 
 fn loaded_view(storage: Storage) -> Element(Message) {
-  todo
+  let Storage(inventories:) = storage
+  let inventory_names =
+    dict.keys(inventories)
+    |> list.map(fn(name) { html.option([attribute.value(name)], name) })
+
+  html.section([], [
+    html.label([attribute.for("inventory-select")], [
+      html.text("Choose which inventory to view: "),
+    ]),
+    html.select(
+      [attribute.id("inventory-select"), attribute.name("inventory")],
+      case inventory_names {
+        [] -> [
+          html.option([attribute.value("")], "--No inventories found--"),
+        ]
+        _ -> inventory_names
+      },
+    ),
+  ])
 }
 
 fn failed_to_load_view(error: storage.Error) -> Element(Message) {
@@ -76,7 +97,7 @@ fn failed_to_load_view(error: storage.Error) -> Element(Message) {
       "Could not read inventory: " <> string.inspect(decode_error)
   }
 
-  html.div([], [
+  html.section([], [
     html.h2([], [html.text("Failed to load :(")]),
     html.p([], [html.text("Error: " <> error_message)]),
   ])

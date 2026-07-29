@@ -8,6 +8,7 @@ import lustre/attribute
 import lustre/effect.{type Effect}
 import lustre/element.{type Element}
 import lustre/element/html
+import lustre/event
 
 pub fn main() -> Nil {
   let app = lustre.application(init, update, view)
@@ -25,6 +26,8 @@ type Model {
 type Message {
   StorageLoaded(storage: Storage)
   StorageFailedToLoad(error: storage.Error)
+  UserClickedCreateNewInventory
+  UserSelectedInventory(name: String)
 }
 
 fn init(_args: #()) -> #(Model, Effect(Message)) {
@@ -47,6 +50,8 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
   case message {
     StorageLoaded(storage:) -> #(Loaded(storage:), effect.none())
     StorageFailedToLoad(error:) -> #(FailedToLoad(error:), effect.none())
+    UserClickedCreateNewInventory -> todo
+    UserSelectedInventory(name:) -> todo
   }
 }
 
@@ -69,18 +74,27 @@ fn loaded_view(storage: Storage) -> Element(Message) {
     |> list.map(fn(name) { html.option([attribute.value(name)], name) })
 
   html.section([], [
-    html.label([attribute.for("inventory-select")], [
-      html.text("Choose which inventory to view: "),
+    html.button([event.on_click(UserClickedCreateNewInventory)], [
+      html.text("Create new inventory"),
     ]),
-    html.select(
-      [attribute.id("inventory-select"), attribute.name("inventory")],
-      case inventory_names {
-        [] -> [
-          html.option([attribute.value("")], "--No inventories found--"),
-        ]
-        _ -> inventory_names
-      },
-    ),
+    html.div([], [
+      html.label([attribute.for("inventory-select")], [
+        html.text("Choose which inventory to view: "),
+      ]),
+      html.select(
+        [
+          attribute.id("inventory-select"),
+          attribute.name("inventory"),
+          event.on_change(UserSelectedInventory),
+        ],
+        case inventory_names {
+          [] -> [
+            html.option([attribute.value("")], "--No inventories found--"),
+          ]
+          _ -> inventory_names
+        },
+      ),
+    ]),
   ])
 }
 

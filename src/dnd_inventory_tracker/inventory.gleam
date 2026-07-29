@@ -34,7 +34,7 @@ pub fn inventory_to_json(inventory: Inventory) -> json.Json {
   ])
 }
 
-pub fn inventory_decoder() -> decode.Decoder(Inventory) {
+pub fn decoder() -> decode.Decoder(Inventory) {
   use version <- decode.field("version", decode.string)
   use <- bool.guard(
     when: version != "1.0",

@@ -1,5 +1,6 @@
 import gleam/bool
 import gleam/dynamic/decode
+import gleam/json
 
 pub type Inventory {
   Inventory(
@@ -16,6 +17,22 @@ const inventory_default = Inventory(
   weight_limit: Pounds(0),
   coins_count_towards_weight_limit: False,
 )
+
+pub fn inventory_to_json(inventory: Inventory) -> json.Json {
+  let Inventory(name:, items:, weight_limit:, coins_count_towards_weight_limit:) =
+    inventory
+
+  json.object([
+    #("version", json.string("1.0")),
+    #("name", json.string(name)),
+    #("items", json.array(items, item_to_json)),
+    #("weight_limit", weight_to_json(weight_limit)),
+    #(
+      "coins_count_towards_weight_limit",
+      json.bool(coins_count_towards_weight_limit),
+    ),
+  ])
+}
 
 pub fn inventory_decoder() -> decode.Decoder(Inventory) {
   use version <- decode.field("version", decode.string)
@@ -48,6 +65,19 @@ pub type Item {
   )
 }
 
+fn item_to_json(item: Item) -> json.Json {
+  let Item(name:, category:, kind:, cost:, weight:, description:, stats:) = item
+  json.object([
+    #("name", json.string(name)),
+    #("category", json.string(category)),
+    #("kind", item_kind_to_json(kind)),
+    #("cost", json.string(cost)),
+    #("weight", weight_to_json(weight)),
+    #("description", json.string(description)),
+    #("stats", json.array(stats, json.string)),
+  ])
+}
+
 fn item_decoder() -> decode.Decoder(Item) {
   use name <- decode.field("name", decode.string)
   use category <- decode.field("category", decode.string)
@@ -67,6 +97,14 @@ pub type ItemKind {
   Other
 }
 
+fn item_kind_to_json(item_kind: ItemKind) -> json.Json {
+  case item_kind {
+    Armor -> json.string("armor")
+    Coin -> json.string("coin")
+    Other -> json.string("other")
+  }
+}
+
 fn item_kind_decoder() -> decode.Decoder(ItemKind) {
   use variant <- decode.then(decode.string)
   case variant {
@@ -79,6 +117,13 @@ fn item_kind_decoder() -> decode.Decoder(ItemKind) {
 
 pub type Weight {
   Pounds(lbs: Int)
+}
+
+fn weight_to_json(weight: Weight) -> json.Json {
+  let Pounds(lbs:) = weight
+  json.object([
+    #("lbs", json.int(lbs)),
+  ])
 }
 
 fn weight_decoder() -> decode.Decoder(Weight) {

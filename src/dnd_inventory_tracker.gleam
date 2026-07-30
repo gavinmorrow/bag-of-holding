@@ -67,7 +67,12 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
       )
     }
     Loaded(model), UserSelectedInventory(name:) -> #(
-      Loaded(LoadedModel(..model, selected_inventory: option.Some(name))),
+      Loaded(
+        LoadedModel(..model, selected_inventory: case name {
+          "" -> option.None
+          _ -> option.Some(name)
+        }),
+      ),
       effect.none(),
     )
     Loaded(LoadedModel(
@@ -118,7 +123,15 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
 
   let inventory_names =
     dict.keys(inventories)
-    |> list.map(fn(name) { html.option([attribute.value(name)], name) })
+    |> list.map(fn(name) {
+      html.option(
+        [
+          attribute.value(name),
+          attribute.selected(selected_inventory == option.Some(name)),
+        ],
+        name,
+      )
+    })
 
   let inventory = case selected_inventory {
     option.Some(name) -> html.p([], [html.text("selected inventory: " <> name)])
@@ -150,7 +163,13 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
             [] -> [
               html.option([attribute.value("")], "--No inventories found--"),
             ]
-            _ -> inventory_names
+            _ -> [
+              html.option(
+                [attribute.value(""), attribute.selected(True)],
+                "--Select an inventory--",
+              ),
+              ..inventory_names
+            ]
           },
         ),
       ]),

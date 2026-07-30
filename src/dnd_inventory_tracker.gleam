@@ -182,12 +182,23 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
           into: model.storage.inventories,
           for: new_inventory.name,
         )
-      let inventories = case old_name == new_inventory.name {
-        True -> inventories
-        False -> dict.delete(old_name, from: inventories)
+      let #(inventories, selected_inventory) = case
+        old_name == new_inventory.name
+      {
+        True -> #(inventories, model.selected_inventory)
+        False -> #(
+          dict.delete(old_name, from: inventories),
+          Ok(new_inventory.name),
+        )
       }
       #(
-        Loaded(LoadedModel(..model, storage: Storage(inventories:))),
+        Loaded(
+          LoadedModel(
+            ..model,
+            storage: Storage(inventories:),
+            selected_inventory:,
+          ),
+        ),
         effect.none(),
       )
     }
@@ -302,7 +313,23 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
 
 fn inventory_view(inventory: Inventory) -> Element(Message) {
   html.main([], [
-    html.h1([], [html.text(inventory.name)]),
+    html.h1([], [
+      html.input([
+        attribute.type_("text"),
+        attribute.minlength(1),
+        attribute.value(inventory.name),
+        event.on_change(fn(new_value) {
+          case new_value {
+            // TODO: surface the error?
+            "" -> NoOp
+            name ->
+              UserUpdatedInventory(inventory.name, fn(inventory) {
+                Inventory(..inventory, name:)
+              })
+          }
+        }),
+      ]),
+    ]),
     html.label([], [
       html.text("Weight limit: "),
       html.input([

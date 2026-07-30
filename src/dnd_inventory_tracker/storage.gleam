@@ -94,8 +94,55 @@ pub fn create_inventory(
 ) -> Effect(message) {
   let name = find_unique_inventory_name(storage, starting_at: 1)
   let inventory = Inventory(..inventory.default, name:)
+  write_inventory(inventory, new_inventory_message, error_message)
+}
+
+pub fn update_inventory(
+  storage: Storage,
+  name: String,
+  update: fn(Inventory) -> Inventory,
+  updated_inventory_message: fn(String, fn(Inventory) -> Inventory) -> message,
+  error_message: fn(Error) -> message,
+) -> Effect(message) {
+  let assert Ok(inventory) = dict.get(storage.inventories, name)
+    as "inventory should exist"
+  let inventory = update(inventory)
+
+  case name == inventory.name {
+    True -> {
+      // Just overwrite
+      write_inventory(
+        inventory,
+        fn(_) { updated_inventory_message(name, update) },
+        error_message,
+      )
+    }
+    False -> {
+      effect.from(fn(dispatch) {
+        let update_promise = {
+          // Rename the file, via deleting and creating
+          use Nil <- promise.try_await(delete_inventory_fs(name))
+          write_inventory_fs(inventory)
+        }
+        promise.tap(update_promise, fn(res) {
+          case res {
+            Ok(Nil) -> dispatch(updated_inventory_message(name, update))
+            Error(error) -> dispatch(error_message(error))
+          }
+        })
+        Nil
+      })
+    }
+  }
+}
+
+fn write_inventory(
+  inventory: Inventory,
+  new_inventory_message: fn(Inventory) -> message,
+  error_message: fn(Error) -> message,
+) -> Effect(message) {
   effect.from(fn(dispatch) {
-    let new_inventory_promise = save_inventory(inventory)
+    let new_inventory_promise = write_inventory_fs(inventory)
     promise.tap(new_inventory_promise, fn(res) {
       case res {
         Ok(Nil) -> dispatch(inventory |> new_inventory_message)
@@ -106,7 +153,7 @@ pub fn create_inventory(
   })
 }
 
-fn save_inventory(inventory: Inventory) -> Promise(Result(Nil, Error)) {
+fn write_inventory_fs(inventory: Inventory) -> Promise(Result(Nil, Error)) {
   use root_dir <- promise.try_await(root_dir())
   use inventories_dir <- promise.try_await(open_dir(root_dir, "inventories"))
   use file <- promise.try_await(open_file(

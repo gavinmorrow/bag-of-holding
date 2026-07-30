@@ -1,7 +1,8 @@
-import dnd_inventory_tracker/inventory.{type Inventory}
+import dnd_inventory_tracker/inventory.{type Inventory, Inventory}
 import dnd_inventory_tracker/storage.{type Storage, Storage}
 import gleam/bool
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/result
 import gleam/set.{type Set}
@@ -48,6 +49,12 @@ type Message {
   UserClickedDeleteInventory(inventory: String)
   InventoryDeleted(inventory: String)
   InventoryDeletionFailed(inventory: String, error: storage.Error)
+
+  UserUpdatedInventory(name: String, update: fn(Inventory) -> Inventory)
+  InventoryUpdated(old_name: String, update: fn(Inventory) -> Inventory)
+  InventoryUpdateFailed(error: storage.Error)
+
+  NoOp
 }
 
 fn init(_args: #()) -> #(Model, Effect(Message)) {
@@ -155,12 +162,46 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
       effect.none(),
     )
 
-    _, UserClickedCreateNewInventory(..)
+    Loaded(model), UserUpdatedInventory(name:, update:) -> #(
+      Loaded(model),
+      storage.update_inventory(
+        model.storage,
+        name,
+        update,
+        InventoryUpdated,
+        InventoryUpdateFailed,
+      ),
+    )
+    Loaded(model), InventoryUpdated(old_name:, update:) -> {
+      let assert Ok(old_inventory) =
+        dict.get(model.storage.inventories, old_name)
+      let new_inventory = update(old_inventory)
+      let inventories =
+        dict.insert(
+          new_inventory,
+          into: model.storage.inventories,
+          for: new_inventory.name,
+        )
+      let inventories = case old_name == new_inventory.name {
+        True -> inventories
+        False -> dict.delete(old_name, from: inventories)
+      }
+      #(
+        Loaded(LoadedModel(..model, storage: Storage(inventories:))),
+        effect.none(),
+      )
+    }
+    _, InventoryUpdateFailed(error:) -> #(todo, todo)
+
+    _, NoOp
+    | _, UserClickedCreateNewInventory(..)
     | _, UserSelectedInventory(..)
     | _, InventoryAdded(..)
     | _, UserClickedDeleteInventory(..)
     | _, InventoryDeleted(..)
     | _, InventoryDeletionFailed(..)
+    | _, UserUpdatedInventory(..)
+    | _, InventoryUpdated(..)
     -> #(model, effect.none())
   }
 }
@@ -260,7 +301,44 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
 }
 
 fn inventory_view(inventory: Inventory) -> Element(Message) {
-  html.p([], [html.text("selected inventory: " <> inventory.name)])
+  html.main([], [
+    html.h1([], [html.text(inventory.name)]),
+    html.label([], [
+      html.text("Weight limit: "),
+      html.input([
+        attribute.type_("number"),
+        attribute.step("1"),
+        attribute.min("0"),
+        attribute.value(case inventory.weight_limit {
+          inventory.Pounds(lbs:) -> int.to_string(lbs)
+        }),
+        event.on_change(fn(weight) {
+          let weight = int.parse(weight)
+          case weight {
+            Ok(weight) if weight >= 0 ->
+              UserUpdatedInventory(inventory.name, fn(inventory) {
+                Inventory(..inventory, weight_limit: inventory.Pounds(weight))
+              })
+            // TODO: surface the error?
+            _ -> NoOp
+          }
+        }),
+      ]),
+    ]),
+    html.br([]),
+    html.label([], [
+      html.text("Coins count towards weight limit: "),
+      html.input([
+        attribute.type_("checkbox"),
+        attribute.checked(inventory.coins_count_towards_weight_limit),
+        event.on_check(fn(new_value) {
+          UserUpdatedInventory(inventory.name, fn(inventory) {
+            Inventory(..inventory, coins_count_towards_weight_limit: new_value)
+          })
+        }),
+      ]),
+    ]),
+  ])
 }
 
 fn failed_to_load_view(error: storage.Error) -> Element(Message) {

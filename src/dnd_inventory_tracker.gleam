@@ -3,7 +3,7 @@ import dnd_inventory_tracker/storage.{type Storage, Storage}
 import gleam/bool
 import gleam/dict
 import gleam/list
-import gleam/option.{type Option}
+import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 import lustre
@@ -29,7 +29,7 @@ type Model {
 type LoadedModel {
   LoadedModel(
     storage: Storage,
-    selected_inventory: Option(String),
+    selected_inventory: Result(String, Nil),
     creating_inventory: Bool,
     deleting_inventories: Set(String),
   )
@@ -59,7 +59,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
     _, StorageLoaded(storage:) -> #(
       Loaded(LoadedModel(
         storage:,
-        selected_inventory: option.None,
+        selected_inventory: Error(Nil),
         creating_inventory: False,
         deleting_inventories: set.new(),
       )),
@@ -70,8 +70,8 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
     Loaded(model), UserSelectedInventory(name:) -> #(
       Loaded(
         LoadedModel(..model, selected_inventory: case name {
-          "" -> option.None
-          _ -> option.Some(name)
+          "" -> Error(Nil)
+          _ -> Ok(name)
         }),
       ),
       effect.none(),
@@ -96,7 +96,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
             for: inventory.name,
             into: model.storage.inventories,
           )),
-          selected_inventory: option.Some(inventory.name),
+          selected_inventory: Ok(inventory.name),
           creating_inventory: False,
         ),
       ),
@@ -108,7 +108,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
       Loaded(
         LoadedModel(
           ..model,
-          selected_inventory: option.None,
+          selected_inventory: Error(Nil),
           deleting_inventories: set.insert(
             inventory,
             into: model.deleting_inventories,
@@ -192,15 +192,22 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
       Ok(html.option(
         [
           attribute.value(name),
-          attribute.selected(selected_inventory == option.Some(name)),
+          attribute.selected(selected_inventory == Ok(name)),
         ],
         name,
       ))
     })
-
-  let inventory = case selected_inventory {
-    option.Some(name) -> html.p([], [html.text("selected inventory: " <> name)])
-    option.None -> element.none()
+  let inventory_name_options = case inventory_names {
+    [] -> [
+      html.option([attribute.value("")], "--No inventories found--"),
+    ]
+    _ -> [
+      html.option(
+        [attribute.value(""), attribute.selected(True)],
+        "--Select an inventory--",
+      ),
+      ..inventory_names
+    ]
   }
 
   html.div([], [
@@ -216,11 +223,11 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
       ),
       html.button(
         case model.selected_inventory {
-          option.Some(inventory) -> [
+          Ok(inventory) -> [
             event.on_click(UserClickedDeleteInventory(inventory:)),
             attribute.disabled(False),
           ]
-          option.None -> [attribute.disabled(True)]
+          Error(Nil) -> [attribute.disabled(True)]
         },
         [
           html.text("Delete current inventory"),
@@ -236,23 +243,21 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
             attribute.name("inventory"),
             event.on_change(UserSelectedInventory),
           ],
-          case inventory_names {
-            [] -> [
-              html.option([attribute.value("")], "--No inventories found--"),
-            ]
-            _ -> [
-              html.option(
-                [attribute.value(""), attribute.selected(True)],
-                "--Select an inventory--",
-              ),
-              ..inventory_names
-            ]
-          },
+          inventory_name_options,
         ),
       ]),
     ]),
-    inventory,
+    case
+      selected_inventory |> result.try(dict.get(model.storage.inventories, _))
+    {
+      Ok(inventory) -> inventory_view(inventory)
+      Error(Nil) -> element.none()
+    },
   ])
+}
+
+fn inventory_view(inventory: Inventory) -> Element(Message) {
+  html.p([], [html.text("selected inventory: " <> inventory.name)])
 }
 
 fn failed_to_load_view(error: storage.Error) -> Element(Message) {

@@ -59,7 +59,10 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
     _, StorageLoaded(storage:) -> #(
       Loaded(LoadedModel(
         storage:,
-        selected_inventory: Error(Nil),
+        selected_inventory: case dict.keys(storage.inventories) {
+          [inventory] -> Ok(inventory)
+          _ -> Error(Nil)
+        },
         creating_inventory: False,
         deleting_inventories: set.new(),
       )),

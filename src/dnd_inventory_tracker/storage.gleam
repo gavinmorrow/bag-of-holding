@@ -111,7 +111,7 @@ fn save_inventory(inventory: Inventory) -> Promise(Result(Nil, Error)) {
   use inventories_dir <- promise.try_await(open_dir(root_dir, "inventories"))
   use file <- promise.try_await(open_file(
     inside: inventories_dir,
-    named: inventory_filename(inventory),
+    named: inventory_filename(inventory.name),
   ))
   use file <- promise.try_await(file_system.create_writable(file) |> fs_err)
   use Nil <- promise.try_await(
@@ -128,8 +128,36 @@ fn save_inventory(inventory: Inventory) -> Promise(Result(Nil, Error)) {
   |> fs_err
 }
 
-fn inventory_filename(inventory: Inventory) -> String {
-  inventory.name <> ".inventory"
+pub fn delete_inventory(
+  inventory: String,
+  inventory_deleted_message: fn(String) -> message,
+  error_message: fn(Error) -> message,
+) -> Effect(message) {
+  effect.from(fn(dispatch) {
+    let delete_inventory_promise = delete_inventory_fs(inventory)
+    promise.tap(delete_inventory_promise, fn(res) {
+      case res {
+        Ok(Nil) -> dispatch(inventory |> inventory_deleted_message)
+        Error(error) -> dispatch(error |> error_message)
+      }
+    })
+    Nil
+  })
+}
+
+fn delete_inventory_fs(inventory: String) -> Promise(Result(Nil, Error)) {
+  use root_dir <- promise.try_await(root_dir())
+  use inventories_dir <- promise.try_await(open_dir(root_dir, "inventories"))
+  file_system.remove_entry(
+    inventories_dir,
+    inventory_filename(inventory),
+    False,
+  )
+  |> fs_err
+}
+
+fn inventory_filename(inventory_name: String) -> String {
+  inventory_name <> ".inventory"
 }
 
 /// Normally, start searching at `i: 1`.

@@ -1,8 +1,10 @@
 import dnd_inventory_tracker/inventory.{type Inventory}
 import dnd_inventory_tracker/storage.{type Storage, Storage}
+import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option}
+import gleam/set.{type Set}
 import gleam/string
 import lustre
 import lustre/attribute
@@ -29,16 +31,23 @@ type LoadedModel {
     storage: Storage,
     selected_inventory: Option(String),
     creating_inventory: Bool,
+    deleting_inventories: Set(String),
   )
 }
 
 type Message {
   StorageLoaded(storage: Storage)
   StorageFailedToLoad(error: storage.Error)
-  UserClickedCreateNewInventory
+
   UserSelectedInventory(name: String)
+
+  UserClickedCreateNewInventory
   InventoryAdded(inventory: Inventory)
   InventoryCreationFailed(error: storage.Error)
+
+  UserClickedDeleteInventory(inventory: String)
+  InventoryDeleted(inventory: String)
+  InventoryDeletionFailed(inventory: String, error: storage.Error)
 }
 
 fn init(_args: #()) -> #(Model, Effect(Message)) {
@@ -52,10 +61,22 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
         storage:,
         selected_inventory: option.None,
         creating_inventory: False,
+        deleting_inventories: set.new(),
       )),
       effect.none(),
     )
     _, StorageFailedToLoad(error:) -> #(FailedToLoad(error:), effect.none())
+
+    Loaded(model), UserSelectedInventory(name:) -> #(
+      Loaded(
+        LoadedModel(..model, selected_inventory: case name {
+          "" -> option.None
+          _ -> option.Some(name)
+        }),
+      ),
+      effect.none(),
+    )
+
     Loaded(model), UserClickedCreateNewInventory if !model.creating_inventory -> {
       #(
         Loaded(LoadedModel(..model, creating_inventory: True)),
@@ -66,38 +87,77 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
         ),
       )
     }
-    Loaded(model), UserSelectedInventory(name:) -> #(
+    Loaded(model), InventoryAdded(inventory:) -> #(
       Loaded(
-        LoadedModel(..model, selected_inventory: case name {
-          "" -> option.None
-          _ -> option.Some(name)
-        }),
+        LoadedModel(
+          ..model,
+          storage: Storage(inventories: dict.insert(
+            inventory,
+            for: inventory.name,
+            into: model.storage.inventories,
+          )),
+          selected_inventory: option.Some(inventory.name),
+          creating_inventory: False,
+        ),
       ),
-      effect.none(),
-    )
-    Loaded(LoadedModel(
-      storage: Storage(inventories:),
-      selected_inventory: _,
-      creating_inventory: _,
-    )),
-      InventoryAdded(inventory:)
-    -> #(
-      Loaded(LoadedModel(
-        storage: Storage(inventories: dict.insert(
-          inventory,
-          for: inventory.name,
-          into: inventories,
-        )),
-        selected_inventory: option.Some(inventory.name),
-        creating_inventory: False,
-      )),
       effect.none(),
     )
     _, InventoryCreationFailed(error:) -> todo
 
-    _, UserClickedCreateNewInventory
-    | _, UserSelectedInventory(name: _)
-    | _, InventoryAdded(inventory: _)
+    Loaded(model), UserClickedDeleteInventory(inventory:) -> #(
+      Loaded(
+        LoadedModel(
+          ..model,
+          selected_inventory: option.None,
+          deleting_inventories: set.insert(
+            inventory,
+            into: model.deleting_inventories,
+          ),
+        ),
+      ),
+      storage.delete_inventory(
+        inventory,
+        InventoryDeleted,
+        InventoryDeletionFailed(inventory, _),
+      ),
+    )
+    Loaded(model), InventoryDeleted(inventory:) -> #(
+      Loaded(
+        LoadedModel(
+          ..model,
+          storage: Storage(dict.delete(
+            inventory,
+            from: model.storage.inventories,
+          )),
+          deleting_inventories: set.delete(
+            inventory,
+            from: model.deleting_inventories,
+          ),
+        ),
+      ),
+      effect.none(),
+    )
+    Loaded(model), InventoryDeletionFailed(inventory:, error:) -> #(
+      // TODO: actually display error
+      Loaded(
+        LoadedModel(
+          ..model,
+          // TODO: should it switch selected inventory back to this one?
+          deleting_inventories: set.delete(
+            inventory,
+            from: model.deleting_inventories,
+          ),
+        ),
+      ),
+      effect.none(),
+    )
+
+    _, UserClickedCreateNewInventory(..)
+    | _, UserSelectedInventory(..)
+    | _, InventoryAdded(..)
+    | _, UserClickedDeleteInventory(..)
+    | _, InventoryDeleted(..)
+    | _, InventoryDeletionFailed(..)
     -> #(model, effect.none())
   }
 }
@@ -119,18 +179,23 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
     storage: Storage(inventories:),
     selected_inventory:,
     creating_inventory:,
+    deleting_inventories:,
   ) = model
 
   let inventory_names =
     dict.keys(inventories)
-    |> list.map(fn(name) {
-      html.option(
+    |> list.filter_map(fn(name) {
+      use <- bool.guard(
+        when: deleting_inventories |> set.contains(name),
+        return: Error(Nil),
+      )
+      Ok(html.option(
         [
           attribute.value(name),
           attribute.selected(selected_inventory == option.Some(name)),
         ],
         name,
-      )
+      ))
     })
 
   let inventory = case selected_inventory {
@@ -147,6 +212,18 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
         ],
         [
           html.text("Create new inventory"),
+        ],
+      ),
+      html.button(
+        case model.selected_inventory {
+          option.Some(inventory) -> [
+            event.on_click(UserClickedDeleteInventory(inventory:)),
+            attribute.disabled(False),
+          ]
+          option.None -> [attribute.disabled(True)]
+        },
+        [
+          html.text("Delete current inventory"),
         ],
       ),
       html.div([], [

@@ -21,8 +21,8 @@ export const get_root_directory = catchErrors(async () => {
   if (!navigator.storage)
     return Result$Error(new_could_not_get_storage_manager());
 
-  const root_dir = await navigator.storage.getDirectory();
-  return Result$Ok(root_dir);
+  const rootDir = await navigator.storage.getDirectory();
+  return Result$Ok(rootDir);
 }, new_could_not_get_root_directory);
 
 export const all_entries = catchErrors(
@@ -72,7 +72,7 @@ const storageWorker = new Worker("./storage_worker.js", { type: "module" });
 /**
  * @typedef {object} Message
  * @prop {number} id
- * @prop {FileSystemFileHandle} file
+ * @prop {string[]} path
  * @prop {string} content */
 
 /** @type {{ id: number, resolve: () => void, reject: (error: any) => void }[]} */
@@ -95,9 +95,15 @@ storageWorker.addEventListener(
 
 export const write_file = catchErrors(
   /** @param {FileSystemFileHandle} file @param {string} contents */
-  (file, content) => {
+  async (file, content) => {
+    if (!navigator.storage)
+      return Result$Error(new_could_not_get_storage_manager());
+    const rootDir = await navigator.storage.getDirectory();
+    const path = await rootDir.resolve(file);
+    console.log(path);
+
     /** @type {Message} */
-    const data = { id: nextMessageId++, file, content };
+    const data = { id: nextMessageId++, path, content };
     storageWorker.postMessage(data);
     return new Promise((resolve, reject) => {
       listeners.push({

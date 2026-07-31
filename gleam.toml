@@ -25,3 +25,6 @@ lustre_dev_tools = ">= 2.3.6 and < 3.0.0"
 
 [javascript]
 source_maps = true
+
+[tools.lustre.html]
+stylesheets = [{ href = "/style.css" }]

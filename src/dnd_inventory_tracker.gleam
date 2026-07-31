@@ -2,6 +2,7 @@ import dnd_inventory_tracker/inventory.{type Inventory, Inventory}
 import dnd_inventory_tracker/storage.{type Storage, Storage}
 import gleam/bool
 import gleam/dict
+import gleam/dynamic/decode
 import gleam/int
 import gleam/list
 import gleam/result
@@ -28,8 +29,9 @@ type Model {
 
 type LoadedModel {
   LoadedModel(
-    storage: Storage,
     selected_inventory: Result(String, Nil),
+    selected_tab: String,
+    storage: Storage,
     creating_inventory: Bool,
     deleting_inventories: Set(String),
   )
@@ -42,6 +44,7 @@ type Message {
   PersistFailed(error: storage.Error)
 
   UserSelectedInventory(name: String)
+  UserChangedTab(new_tab_id: String)
 
   UserClickedCreateNewInventory
   InventoryAdded(inventory: Inventory)
@@ -66,11 +69,12 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
   case model, message {
     _, StorageLoaded(storage:) -> #(
       Loaded(LoadedModel(
-        storage:,
         selected_inventory: case dict.keys(storage.inventories) {
           [inventory] -> Ok(inventory)
           _ -> Error(Nil)
         },
+        selected_tab: inventory_body_tab_id,
+        storage:,
         creating_inventory: False,
         deleting_inventories: set.new(),
       )),
@@ -93,6 +97,10 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
           _ -> Ok(name)
         }),
       ),
+      effect.none(),
+    )
+    Loaded(model), UserChangedTab(new_tab_id:) -> #(
+      Loaded(LoadedModel(..model, selected_tab: new_tab_id)),
       effect.none(),
     )
 
@@ -216,6 +224,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
     _, NoOp
     | _, UserClickedCreateNewInventory(..)
     | _, UserSelectedInventory(..)
+    | _, UserChangedTab(..)
     | _, InventoryAdded(..)
     | _, UserClickedDeleteInventory(..)
     | _, InventoryDeleted(..)
@@ -240,8 +249,9 @@ fn loading_view() -> Element(Message) {
 
 fn loaded_view(model: LoadedModel) -> Element(Message) {
   let LoadedModel(
-    storage: Storage(inventories:),
     selected_inventory:,
+    selected_tab:,
+    storage: Storage(inventories:),
     creating_inventory:,
     deleting_inventories:,
   ) = model
@@ -317,13 +327,16 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
     case
       selected_inventory |> result.try(dict.get(model.storage.inventories, _))
     {
-      Ok(inventory) -> inventory_view(inventory)
+      Ok(inventory) -> inventory_view(inventory, selected_tab)
       Error(Nil) -> element.none()
     },
   ])
 }
 
-fn inventory_view(inventory: Inventory) -> Element(Message) {
+fn inventory_view(
+  inventory: Inventory,
+  selected_tab: String,
+) -> Element(Message) {
   html.main([], [
     html.h1([], [
       html.input([
@@ -377,7 +390,158 @@ fn inventory_view(inventory: Inventory) -> Element(Message) {
         }),
       ]),
     ]),
+    tabs(
+      [
+        inventory_body_tab(inventory),
+        inventory_backpack_tab(inventory),
+        inventory_pouch_tab(inventory),
+      ],
+      selected_tab,
+      UserChangedTab,
+    ),
   ])
+}
+
+const inventory_body_tab_id = "body"
+
+fn inventory_body_tab(inventory: Inventory) -> Tab(Message) {
+  Tab(
+    id: inventory_body_tab_id,
+    name: "Body",
+    contents: element.fragment([html.text("body")]),
+  )
+}
+
+const inventory_backpack_tab_id = "backpack"
+
+fn inventory_backpack_tab(inventory: Inventory) -> Tab(Message) {
+  Tab(
+    id: inventory_backpack_tab_id,
+    name: "Backpack",
+    contents: element.fragment([html.text("backpack")]),
+  )
+}
+
+const inventory_pouch_tab_id = "pouch"
+
+fn inventory_pouch_tab(inventory: Inventory) -> Tab(Message) {
+  Tab(
+    id: inventory_pouch_tab_id,
+    name: "Pouch",
+    contents: element.fragment([html.text("pouch")]),
+  )
+}
+
+type Tab(message) {
+  Tab(id: String, name: String, contents: Element(message))
+}
+
+// Based on <https://www.w3.org/WAI/ARIA/apg/patterns/tabs/examples/tabs-automatic/>
+// (2026-08-03)
+/// All tabs must have unique ids.
+fn tabs(
+  tabs: List(Tab(message)),
+  selected_tab: String,
+  selected_message: fn(String) -> message,
+) -> Element(message) {
+  let first_tab = list.first(tabs)
+  let last_tab = list.last(tabs)
+  let #(buttons, panels) =
+    tabs_loop(
+      tabs:,
+      buttons: list.new(),
+      panels: list.new(),
+      selected_tab:,
+      selected_message:,
+      prev_tab: Error(Nil),
+      first_tab:,
+      last_tab:,
+    )
+
+  html.div([attribute.class("tabs")], [
+    html.div([attribute.role("tablist")], buttons),
+    ..panels
+  ])
+}
+
+fn tabs_loop(
+  tabs tabs: List(Tab(message)),
+  buttons buttons: List(Element(message)),
+  panels panels: List(Element(message)),
+  selected_tab selected_tab: String,
+  selected_message selected_message: fn(String) -> message,
+  prev_tab prev_tab: Result(Tab(message), Nil),
+  first_tab first_tab: Result(Tab(message), Nil),
+  last_tab last_tab: Result(Tab(message), Nil),
+) {
+  case tabs {
+    [] -> #(list.reverse(buttons), list.reverse(panels))
+    [tab, ..rest] -> {
+      let next_tab = list.first(rest)
+
+      let selected = tab.id == selected_tab
+      let button =
+        html.button(
+          [
+            attribute.id("tab-" <> tab.id),
+            attribute.role("tab"),
+            attribute.aria_selected(selected),
+            attribute.autofocus(selected),
+            attribute.tabindex(case selected {
+              True -> 0
+              False -> -1
+            }),
+            attribute.aria_controls("tabpanel-" <> tab.id),
+            event.on_click(selected_message(tab.id)),
+            event.advanced("keydown", {
+              use key <- decode.field("key", decode.string)
+              let selected_tab = case key {
+                "ArrowLeft" -> prev_tab
+                "ArrowRight" -> next_tab
+                "Home" -> first_tab
+                "End" -> last_tab
+                _ -> Error(Nil)
+              }
+              case selected_tab {
+                Ok(selected_tab) ->
+                  decode.success(event.handler(
+                    dispatch: selected_message(selected_tab.id),
+                    prevent_default: True,
+                    stop_propagation: True,
+                  ))
+                Error(Nil) ->
+                  decode.failure(
+                    event.handler(selected_message(tab.id), False, False),
+                    "",
+                  )
+              }
+            }),
+          ],
+          [html.text(tab.name)],
+        )
+      let panel =
+        html.div(
+          [
+            attribute.id("tabpanel-" <> tab.id),
+            attribute.role("tabpanel"),
+            attribute.tabindex(0),
+            attribute.aria_labelledby("tab-" <> tab.id),
+            attribute.classes([#("hidden", !selected)]),
+          ],
+          [tab.contents],
+        )
+      tabs_loop(
+        tabs: rest,
+        buttons: [button, ..buttons],
+        panels: [panel, ..panels],
+        selected_tab:,
+        selected_message:,
+        prev_tab: Ok(tab),
+        first_tab:,
+        last_tab:,
+      )
+    }
+  }
 }
 
 fn failed_to_load_view(error: storage.Error) -> Element(Message) {

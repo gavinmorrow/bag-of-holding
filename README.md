@@ -1,6 +1,7 @@
 # DND Inventory Tracker
 
-This is a web app for managing a Dungeons & Dragons inventory.
+This is a web app for managing a Dungeons & Dragons inventory. It is hosted at
+<https://dnd-inventory-tracker.gavinmorrow.com/>.
 
 Currently a work in progress.
 

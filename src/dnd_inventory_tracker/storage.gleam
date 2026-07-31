@@ -1,6 +1,7 @@
 import dnd_inventory_tracker/inventory.{type Inventory, Inventory}
 import gleam/bit_array
 import gleam/dict.{type Dict}
+import gleam/dynamic
 import gleam/int
 import gleam/javascript/array
 import gleam/javascript/promise.{type Promise}
@@ -21,6 +22,7 @@ pub type Error {
   CouldNotGetRootDirectory(String)
   FileSystemError(String)
   CouldNotReadInventory(InventoryError)
+  UncaughtInPromise(dynamic.Dynamic)
 }
 
 pub type InventoryError {
@@ -33,25 +35,31 @@ pub fn load(
   error_to_message: fn(Error) -> message,
 ) -> Effect(message) {
   effect.from(fn(dispatch) {
-    let storage_promise = {
-      use inventories <- promise.try_await(get_inventory_files())
-      use inventories <- promise.map(
-        promise.await_array(array.map(inventories, load_inventory)),
-      )
-      use inventories <- result.map(
-        inventories
-        |> array.to_list
-        |> list.try_fold(from: dict.new(), with: fn(inventories, inventory) {
-          case inventory {
-            Ok(inventory) ->
-              Ok(dict.insert(inventory, into: inventories, for: inventory.name))
-            Error(error) -> Error(CouldNotReadInventory(error))
-          }
-        }),
-      )
+    let storage_promise =
+      {
+        use inventories <- promise.try_await(get_inventory_files())
+        use inventories <- promise.map(
+          promise.await_array(array.map(inventories, load_inventory)),
+        )
+        use inventories <- result.map(
+          inventories
+          |> array.to_list
+          |> list.try_fold(from: dict.new(), with: fn(inventories, inventory) {
+            case inventory {
+              Ok(inventory) ->
+                Ok(dict.insert(
+                  inventory,
+                  into: inventories,
+                  for: inventory.name,
+                ))
+              Error(error) -> Error(CouldNotReadInventory(error))
+            }
+          }),
+        )
 
-      Storage(inventories:)
-    }
+        Storage(inventories:)
+      }
+      |> promise_err
     promise.tap(storage_promise, fn(storage) {
       case storage {
         Ok(storage) -> dispatch(storage |> storage_to_message)
@@ -119,11 +127,13 @@ pub fn update_inventory(
     }
     False -> {
       effect.from(fn(dispatch) {
-        let update_promise = {
-          // Rename the file, via deleting and creating
-          use Nil <- promise.try_await(delete_inventory_fs(name))
-          write_inventory_fs(inventory)
-        }
+        let update_promise =
+          {
+            // Rename the file, via deleting and creating
+            use Nil <- promise.try_await(delete_inventory_fs(name))
+            write_inventory_fs(inventory)
+          }
+          |> promise_err
         promise.tap(update_promise, fn(res) {
           case res {
             Ok(Nil) -> dispatch(updated_inventory_message(name, update))
@@ -142,7 +152,9 @@ fn write_inventory(
   error_message: fn(Error) -> message,
 ) -> Effect(message) {
   effect.from(fn(dispatch) {
-    let new_inventory_promise = write_inventory_fs(inventory)
+    let new_inventory_promise =
+      write_inventory_fs(inventory)
+      |> promise_err
     promise.tap(new_inventory_promise, fn(res) {
       case res {
         Ok(Nil) -> dispatch(inventory |> new_inventory_message)
@@ -181,7 +193,7 @@ pub fn delete_inventory(
   error_message: fn(Error) -> message,
 ) -> Effect(message) {
   effect.from(fn(dispatch) {
-    let delete_inventory_promise = delete_inventory_fs(inventory)
+    let delete_inventory_promise = delete_inventory_fs(inventory) |> promise_err
     promise.tap(delete_inventory_promise, fn(res) {
       case res {
         Ok(Nil) -> dispatch(inventory |> inventory_deleted_message)
@@ -258,4 +270,8 @@ fn fs_err(
   promise: Promise(Result(value, String)),
 ) -> Promise(Result(value, Error)) {
   promise |> map_err(FileSystemError)
+}
+
+fn promise_err(p: Promise(Result(a, Error))) -> Promise(Result(a, Error)) {
+  promise.rescue(p, fn(error) { Error(UncaughtInPromise(error)) })
 }

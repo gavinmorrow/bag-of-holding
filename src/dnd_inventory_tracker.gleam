@@ -379,6 +379,8 @@ fn failed_to_load_view(error: storage.Error) -> Element(Message) {
     storage.CouldNotReadInventory(storage.CouldNotDecode(decode_error)) ->
       // FIXME: this shouldn't use string.inspect
       "Could not read inventory: " <> string.inspect(decode_error)
+    storage.UncaughtInPromise(error) ->
+      "Uncaught (in promise): " <> string.inspect(error)
   }
 
   html.section([], [

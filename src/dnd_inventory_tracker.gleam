@@ -6,7 +6,6 @@ import gleam/int
 import gleam/list
 import gleam/result
 import gleam/set.{type Set}
-import gleam/string
 import lustre
 import lustre/attribute
 import lustre/effect.{type Effect}
@@ -374,13 +373,6 @@ fn failed_to_load_view(error: storage.Error) -> Element(Message) {
     storage.CouldNotGetRootDirectory(error) ->
       "Could not get root directory: " <> error
     storage.FileSystemError(error) -> "File system error: " <> error
-    storage.CouldNotReadInventory(storage.CouldNotGetFile(error)) ->
-      "Could not read inventory: Could not get file: " <> error
-    storage.CouldNotReadInventory(storage.CouldNotDecode(decode_error)) ->
-      // FIXME: this shouldn't use string.inspect
-      "Could not read inventory: " <> string.inspect(decode_error)
-    storage.UncaughtInPromise(error) ->
-      "Uncaught (in promise): " <> string.inspect(error)
   }
 
   html.section([], [

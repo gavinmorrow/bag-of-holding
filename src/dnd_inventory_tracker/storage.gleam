@@ -1,17 +1,11 @@
 import dnd_inventory_tracker/inventory.{type Inventory, Inventory}
-import gleam/bit_array
 import gleam/dict.{type Dict}
-import gleam/dynamic
 import gleam/int
-import gleam/javascript/array
 import gleam/javascript/promise.{type Promise}
 import gleam/json
 import gleam/list
 import gleam/result
 import lustre/effect.{type Effect}
-import plinth/browser/file
-import plinth/browser/file_system
-import plinth/browser/storage
 
 pub type Storage {
   Storage(inventories: Dict(String, Inventory))
@@ -21,12 +15,10 @@ pub type Error {
   CouldNotGetStorageManager
   CouldNotGetRootDirectory(String)
   FileSystemError(String)
-  CouldNotReadInventory(InventoryError)
-  UncaughtInPromise(dynamic.Dynamic)
 }
 
 pub type InventoryError {
-  CouldNotGetFile(String)
+  CouldNotGetFile(Error)
   CouldNotDecode(json.DecodeError)
 }
 
@@ -35,31 +27,27 @@ pub fn load(
   error_to_message: fn(Error) -> message,
 ) -> Effect(message) {
   effect.from(fn(dispatch) {
-    let storage_promise =
-      {
-        use inventories <- promise.try_await(get_inventory_files())
-        use inventories <- promise.map(
-          promise.await_array(array.map(inventories, load_inventory)),
-        )
-        use inventories <- result.map(
-          inventories
-          |> array.to_list
-          |> list.try_fold(from: dict.new(), with: fn(inventories, inventory) {
-            case inventory {
-              Ok(inventory) ->
-                Ok(dict.insert(
-                  inventory,
-                  into: inventories,
-                  for: inventory.name,
-                ))
-              Error(error) -> Error(CouldNotReadInventory(error))
-            }
-          }),
-        )
+    let storage_promise = {
+      use inventories <- promise.try_await(get_inventory_files())
+      use inventories <- promise.map(
+        promise.await_list(list.map(inventories, load_inventory)),
+      )
 
-        Storage(inventories:)
-      }
-      |> promise_err
+      let inventories =
+        inventories
+        |> list.fold(from: dict.new(), with: fn(inventories, inventory) {
+          case inventory {
+            Ok(inventory) ->
+              dict.insert(inventory, into: inventories, for: inventory.name)
+            Error(_error) -> {
+              // TODO: handle error?
+              inventories
+            }
+          }
+        })
+
+      Storage(inventories:) |> Ok
+    }
     promise.tap(storage_promise, fn(storage) {
       case storage {
         Ok(storage) -> dispatch(storage |> storage_to_message)
@@ -70,25 +58,22 @@ pub fn load(
   })
 }
 
-fn get_inventory_files() -> Promise(
-  Result(array.Array(file_system.FileHandle), Error),
-) {
-  use root_dir <- promise.try_await(root_dir())
-  use inventories_dir <- promise.try_await(open_dir(root_dir, "inventories"))
-  use #(_, inventories) <- promise.map_try(
-    file_system.all_entries(inventories_dir)
-    |> fs_err,
-  )
+fn get_inventory_files() -> FsResult(List(FileHandle)) {
+  use root_dir <- promise.try_await(get_root_directory())
+  use inventories_dir <- promise.try_await(get_directory_handle(
+    in: root_dir,
+    named: "inventories",
+    create_if_missing: True,
+  ))
+  use #(_, inventories) <- promise.map_try(all_entries(inventories_dir))
   Ok(inventories)
 }
 
 fn load_inventory(
-  from file: file_system.FileHandle,
+  from file: FileHandle,
 ) -> Promise(Result(Inventory, InventoryError)) {
-  use file <- promise.try_await(
-    file_system.get_file(file) |> map_err(CouldNotGetFile),
-  )
-  use text <- promise.map(file.text(file))
+  use file <- promise.try_await(get_file(file) |> map_err(CouldNotGetFile))
+  use text <- promise.map_try(file_text(file) |> map_err(CouldNotGetFile))
   json.parse(text, using: inventory.decoder())
   |> result.map_error(CouldNotDecode)
 }
@@ -127,13 +112,11 @@ pub fn update_inventory(
     }
     False -> {
       effect.from(fn(dispatch) {
-        let update_promise =
-          {
-            // Rename the file, via deleting and creating
-            use Nil <- promise.try_await(delete_inventory_fs(name))
-            write_inventory_fs(inventory)
-          }
-          |> promise_err
+        let update_promise = {
+          // Rename the file, via deleting and creating
+          use Nil <- promise.try_await(delete_inventory_fs(name))
+          write_inventory_fs(inventory)
+        }
         promise.tap(update_promise, fn(res) {
           case res {
             Ok(Nil) -> dispatch(updated_inventory_message(name, update))
@@ -152,9 +135,7 @@ fn write_inventory(
   error_message: fn(Error) -> message,
 ) -> Effect(message) {
   effect.from(fn(dispatch) {
-    let new_inventory_promise =
-      write_inventory_fs(inventory)
-      |> promise_err
+    let new_inventory_promise = write_inventory_fs(inventory)
     promise.tap(new_inventory_promise, fn(res) {
       case res {
         Ok(Nil) -> dispatch(inventory |> new_inventory_message)
@@ -165,26 +146,24 @@ fn write_inventory(
   })
 }
 
-fn write_inventory_fs(inventory: Inventory) -> Promise(Result(Nil, Error)) {
-  use root_dir <- promise.try_await(root_dir())
-  use inventories_dir <- promise.try_await(open_dir(root_dir, "inventories"))
-  use file <- promise.try_await(open_file(
-    inside: inventories_dir,
-    named: inventory_filename(inventory.name),
+fn write_inventory_fs(inventory: Inventory) -> FsResult(Nil) {
+  use root_dir <- promise.try_await(get_root_directory())
+  use inventories_dir <- promise.try_await(get_directory_handle(
+    in: root_dir,
+    named: "inventories",
+    create_if_missing: True,
   ))
-  use file <- promise.try_await(file_system.create_writable(file) |> fs_err)
-  use Nil <- promise.try_await(
-    file_system.write(
-      file,
-      inventory
-        |> inventory.to_json
-        |> json.to_string
-        |> bit_array.from_string,
-    )
-    |> fs_err,
+  use file <- promise.try_await(get_file_handle(
+    in: inventories_dir,
+    named: inventory_filename(inventory.name),
+    create_if_missing: True,
+  ))
+  write(
+    inventory
+      |> inventory.to_json
+      |> json.to_string,
+    to: file,
   )
-  file_system.close(file)
-  |> fs_err
 }
 
 pub fn delete_inventory(
@@ -193,7 +172,7 @@ pub fn delete_inventory(
   error_message: fn(Error) -> message,
 ) -> Effect(message) {
   effect.from(fn(dispatch) {
-    let delete_inventory_promise = delete_inventory_fs(inventory) |> promise_err
+    let delete_inventory_promise = delete_inventory_fs(inventory)
     promise.tap(delete_inventory_promise, fn(res) {
       case res {
         Ok(Nil) -> dispatch(inventory |> inventory_deleted_message)
@@ -204,15 +183,18 @@ pub fn delete_inventory(
   })
 }
 
-fn delete_inventory_fs(inventory: String) -> Promise(Result(Nil, Error)) {
-  use root_dir <- promise.try_await(root_dir())
-  use inventories_dir <- promise.try_await(open_dir(root_dir, "inventories"))
-  file_system.remove_entry(
-    inventories_dir,
-    inventory_filename(inventory),
-    False,
+fn delete_inventory_fs(inventory: String) -> FsResult(Nil) {
+  use root_dir <- promise.try_await(get_root_directory())
+  use inventories_dir <- promise.try_await(get_directory_handle(
+    in: root_dir,
+    named: "inventories",
+    create_if_missing: False,
+  ))
+  remove_entry(
+    in: inventories_dir,
+    named: inventory_filename(inventory),
+    recursive: False,
   )
-  |> fs_err
 }
 
 fn inventory_filename(inventory_name: String) -> String {
@@ -229,36 +211,6 @@ fn find_unique_inventory_name(storage: Storage, starting_at i: Int) -> String {
   }
 }
 
-fn storage_manager() -> Result(storage.StorageManager, Error) {
-  storage.get()
-  |> result.replace_error(CouldNotGetStorageManager)
-}
-
-fn root_dir() -> Promise(Result(file_system.DirectoryHandle, Error)) {
-  case storage_manager() {
-    Ok(storage_manager) ->
-      storage.get_directory(storage_manager)
-      |> map_err(CouldNotGetRootDirectory)
-    Error(error) -> promise.resolve(Error(error))
-  }
-}
-
-fn open_dir(
-  inside dir: file_system.DirectoryHandle,
-  named name: String,
-) -> Promise(Result(file_system.DirectoryHandle, Error)) {
-  file_system.get_directory_handle(dir, name, True)
-  |> fs_err
-}
-
-fn open_file(
-  inside dir: file_system.DirectoryHandle,
-  named name: String,
-) -> Promise(Result(file_system.FileHandle, Error)) {
-  file_system.get_file_handle(dir, name, True)
-  |> fs_err
-}
-
 fn map_err(
   promise: Promise(Result(value, a)),
   map: fn(a) -> b,
@@ -266,12 +218,76 @@ fn map_err(
   promise |> promise.map(result.map_error(_, map))
 }
 
-fn fs_err(
-  promise: Promise(Result(value, String)),
-) -> Promise(Result(value, Error)) {
-  promise |> map_err(FileSystemError)
+// #################
+// ### EXTERNALS ###
+// #################
+
+// For external use to prevent cyclical imports
+pub fn new_could_not_get_storage_manager() -> Error {
+  CouldNotGetStorageManager
 }
 
-fn promise_err(p: Promise(Result(a, Error))) -> Promise(Result(a, Error)) {
-  promise.rescue(p, fn(error) { Error(UncaughtInPromise(error)) })
+pub fn new_could_not_get_root_directory(desc: String) -> Error {
+  CouldNotGetRootDirectory(desc)
 }
+
+pub fn new_file_system_error(desc: String) -> Error {
+  FileSystemError(desc)
+}
+
+type FsResult(a) =
+  Promise(Result(a, Error))
+
+type Handle(directory_or_file)
+
+type DirectoryHandle =
+  Handle(DirectoryT)
+
+type FileHandle =
+  Handle(FileT)
+
+/// Phantom type marker for Handle, indicating a directory handle.
+type DirectoryT
+
+/// Phantom type marker for Handle, indicating a file handle.
+type FileT
+
+type File
+
+@external(javascript, "./storage_ffi.js", "get_root_directory")
+fn get_root_directory() -> FsResult(DirectoryHandle)
+
+@external(javascript, "./storage_ffi.js", "all_entries")
+fn all_entries(
+  in directory: DirectoryHandle,
+) -> FsResult(#(List(DirectoryHandle), List(FileHandle)))
+
+@external(javascript, "./storage_ffi.js", "get_directory_handle")
+fn get_directory_handle(
+  in directory: DirectoryHandle,
+  named name: String,
+  create_if_missing create_if_missing: Bool,
+) -> FsResult(DirectoryHandle)
+
+@external(javascript, "./storage_ffi.js", "get_file_handle")
+fn get_file_handle(
+  in directory: DirectoryHandle,
+  named name: String,
+  create_if_missing create_if_missing: Bool,
+) -> FsResult(FileHandle)
+
+@external(javascript, "./storage_ffi.js", "remove_entry")
+fn remove_entry(
+  in directory: DirectoryHandle,
+  named name: String,
+  recursive recursive: Bool,
+) -> FsResult(Nil)
+
+@external(javascript, "./storage_ffi.js", "get_file")
+fn get_file(handle: FileHandle) -> FsResult(File)
+
+@external(javascript, "./storage_ffi.js", "file_text")
+fn file_text(file: File) -> FsResult(String)
+
+@external(javascript, "./storage_ffi.js", "write_file")
+fn write(to file: FileHandle, write content: String) -> FsResult(Nil)

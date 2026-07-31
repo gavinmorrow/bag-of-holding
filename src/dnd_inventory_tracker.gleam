@@ -257,7 +257,10 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
     ]
     _ -> [
       html.option(
-        [attribute.value(""), attribute.selected(True)],
+        [
+          attribute.value(""),
+          attribute.selected(selected_inventory == Error(Nil)),
+        ],
         "--Select an inventory--",
       ),
       ..inventory_names

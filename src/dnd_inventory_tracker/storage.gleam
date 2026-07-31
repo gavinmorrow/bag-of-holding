@@ -13,6 +13,7 @@ pub type Storage {
 
 pub type Error {
   CouldNotGetStorageManager
+  CouldNotPersist(String)
   CouldNotGetRootDirectory(String)
   FileSystemError(String)
 }
@@ -20,6 +21,22 @@ pub type Error {
 pub type InventoryError {
   CouldNotGetFile(Error)
   CouldNotDecode(json.DecodeError)
+}
+
+pub fn persist(
+  persist_to_message: fn(Bool) -> message,
+  error_to_message: fn(Error) -> message,
+) -> Effect(message) {
+  effect.from(fn(dispatch) {
+    let persist_promise = persist_fs()
+    promise.tap(persist_promise, fn(res) {
+      case res {
+        Ok(persisted) -> dispatch(persisted |> persist_to_message)
+        Error(error) -> dispatch(error |> error_to_message)
+      }
+    })
+    Nil
+  })
 }
 
 pub fn load(
@@ -227,6 +244,10 @@ pub fn new_could_not_get_storage_manager() -> Error {
   CouldNotGetStorageManager
 }
 
+pub fn new_could_not_persist(desc: String) -> Error {
+  CouldNotPersist(desc)
+}
+
 pub fn new_could_not_get_root_directory(desc: String) -> Error {
   CouldNotGetRootDirectory(desc)
 }
@@ -253,6 +274,9 @@ type DirectoryT
 type FileT
 
 type File
+
+@external(javascript, "./storage_ffi.js", "persist")
+fn persist_fs() -> FsResult(Bool)
 
 @external(javascript, "./storage_ffi.js", "get_root_directory")
 fn get_root_directory() -> FsResult(DirectoryHandle)

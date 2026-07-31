@@ -38,6 +38,8 @@ type LoadedModel {
 type Message {
   StorageLoaded(storage: Storage)
   StorageFailedToLoad(error: storage.Error)
+  PersistStatusUpdated(persisted: Bool)
+  PersistFailed(error: storage.Error)
 
   UserSelectedInventory(name: String)
 
@@ -75,6 +77,14 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
       effect.none(),
     )
     _, StorageFailedToLoad(error:) -> #(FailedToLoad(error:), effect.none())
+    _, PersistStatusUpdated(persisted: True) -> #(model, effect.none())
+    _, PersistStatusUpdated(persisted: False) -> #(
+      FailedToLoad(error: storage.CouldNotPersist(
+        "Permission denied to persist storage",
+      )),
+      effect.none(),
+    )
+    _, PersistFailed(error:) -> #(FailedToLoad(error:), effect.none())
 
     Loaded(model), UserSelectedInventory(name:) -> #(
       Loaded(
@@ -373,6 +383,7 @@ fn inventory_view(inventory: Inventory) -> Element(Message) {
 fn failed_to_load_view(error: storage.Error) -> Element(Message) {
   let error_message = case error {
     storage.CouldNotGetStorageManager -> "Could not get storage manager."
+    storage.CouldNotPersist(error) -> "Could not persist storage: " <> error
     storage.CouldNotGetRootDirectory(error) ->
       "Could not get root directory: " <> error
     storage.FileSystemError(error) -> "File system error: " <> error

@@ -2,6 +2,7 @@ import { Result$Ok, Result$Error } from "../../prelude.mjs";
 import { to_list as array_to_list } from "../../gleam_javascript/gleam/javascript/array.mjs";
 import {
   new_could_not_get_storage_manager,
+  new_could_not_persist,
   new_could_not_get_root_directory,
   new_file_system_error,
 } from "./storage.mjs";
@@ -16,6 +17,12 @@ const catchErrors =
         console.warn("Could not get message for error:", error);
       return Result$Error(ErrorConstructor(message ?? "Unknown error"));
     });
+
+export const persist = catchErrors(async () => {
+  if (!navigator.storage)
+    return Result$Error(new_could_not_get_storage_manager());
+  return Result$Ok(await navigator.storage.persist());
+}, new_could_not_persist);
 
 export const get_root_directory = catchErrors(async () => {
   if (!navigator.storage)

@@ -57,7 +57,7 @@ pub type Item {
   Item(
     name: String,
     category: String,
-    kind: ItemKind,
+    location: Location,
     cost: String,
     weight: Weight,
     description: String,
@@ -66,11 +66,12 @@ pub type Item {
 }
 
 fn item_to_json(item: Item) -> json.Json {
-  let Item(name:, category:, kind:, cost:, weight:, description:, stats:) = item
+  let Item(name:, category:, location:, cost:, weight:, description:, stats:) =
+    item
   json.object([
     #("name", json.string(name)),
     #("category", json.string(category)),
-    #("kind", item_kind_to_json(kind)),
+    #("location", item_kind_to_json(location)),
     #("cost", json.string(cost)),
     #("weight", weight_to_json(weight)),
     #("description", json.string(description)),
@@ -81,37 +82,37 @@ fn item_to_json(item: Item) -> json.Json {
 fn item_decoder() -> decode.Decoder(Item) {
   use name <- decode.field("name", decode.string)
   use category <- decode.field("category", decode.string)
-  use kind <- decode.field("kind", item_kind_decoder())
+  use location <- decode.field("kind", item_kind_decoder())
   use cost <- decode.field("cost", decode.string)
   use weight <- decode.field("weight", weight_decoder())
   use description <- decode.field("description", decode.string)
   use stats <- decode.field("stats", decode.list(decode.string))
 
-  Item(name:, category:, kind:, cost:, weight:, description:, stats:)
+  Item(name:, category:, location:, cost:, weight:, description:, stats:)
   |> decode.success
 }
 
-pub type ItemKind {
-  Armor
-  Coin
-  Other
+pub type Location {
+  Body
+  Backpack
+  Pouch
 }
 
-fn item_kind_to_json(item_kind: ItemKind) -> json.Json {
+fn item_kind_to_json(item_kind: Location) -> json.Json {
   case item_kind {
-    Armor -> json.string("armor")
-    Coin -> json.string("coin")
-    Other -> json.string("other")
+    Body -> json.string("body")
+    Backpack -> json.string("backpack")
+    Pouch -> json.string("pouch")
   }
 }
 
-fn item_kind_decoder() -> decode.Decoder(ItemKind) {
+fn item_kind_decoder() -> decode.Decoder(Location) {
   use variant <- decode.then(decode.string)
   case variant {
-    "armor" -> decode.success(Armor)
-    "coin" -> decode.success(Coin)
-    "other" -> decode.success(Other)
-    _ -> decode.failure(Other, "ItemKind")
+    "body" -> decode.success(Body)
+    "backpack" -> decode.success(Backpack)
+    "pouch" -> decode.success(Pouch)
+    _ -> decode.failure(Backpack, "ItemKind")
   }
 }
 

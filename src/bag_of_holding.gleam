@@ -1,5 +1,5 @@
-import dnd_inventory_tracker/inventory.{type Inventory, Inventory}
-import dnd_inventory_tracker/storage.{type Storage, Storage}
+import bag_of_holding/inventory.{type Inventory, Inventory}
+import bag_of_holding/storage.{type Storage, Storage}
 import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode

@@ -1,4 +1,4 @@
-name = "dnd_inventory_tracker"
+name = "bag_of_holding"
 version = "1.0.0"
 target = "javascript"
 

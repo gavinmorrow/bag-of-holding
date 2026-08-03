@@ -1,4 +1,4 @@
-import dnd_inventory_tracker/inventory.{type Inventory, Inventory}
+import bag_of_holding/inventory.{type Inventory, Inventory}
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/javascript/promise.{type Promise}

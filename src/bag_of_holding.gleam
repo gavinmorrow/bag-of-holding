@@ -316,7 +316,12 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
       ]),
       menu.popup_menu(
         "inventory-options",
-        html.span([attribute.aria_label("Inventory options")], [html.text("▼")]),
+        html.span([attribute.aria_label("Inventory options")], [
+          html.text(case menu_open {
+            False -> "▼"
+            True -> "▲"
+          }),
+        ]),
         [event.on_click(UserChangedMenuState(!menu_open))],
         menu_open,
         [

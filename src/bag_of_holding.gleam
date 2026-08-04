@@ -293,73 +293,66 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
       }
     })
 
-  html.div([], [
-    menu.popup_menu(
-      "Inventory options",
-      html.text("v"),
-      [event.on_click(UserChangedMenuState(!menu_open))],
-      menu_open,
-      [
-        menu.button(
-          label: "Create new inventory",
-          on_click: case creating_inventory {
-            False -> Ok(UserClickedCreateNewInventory)
-            True -> Error(Nil)
-          },
-        ),
-        menu.button(
-          label: "Delete current inventory",
-          on_click: case inventories |> dict.size {
-            size if size >= 2 ->
-              Ok(UserClickedDeleteInventory(selected_inventory))
-            _ -> Error(Nil)
-          },
-        ),
-        menu.radio(
-          label: "Inventories",
-          on_select: fn(selected_inventory) {
-            UserSelectedInventory(selected_inventory)
-          },
-          options: inventory_names
-            |> list.map(fn(inventory) {
-              menu.RadioItem(
-                label: inventory,
-                value: inventory,
-                checked: inventory == selected_inventory,
-                disabled: False,
-              )
-            }),
-        ),
-      ],
-    ),
-    case dict.get(model.storage.inventories, selected_inventory) {
-      Ok(inventory) -> inventory_view(inventory, selected_tab)
-      Error(Nil) -> element.text("Error: inventory file missing")
-    },
-  ])
-}
+  let assert Ok(inventory) =
+    dict.get(model.storage.inventories, selected_inventory)
 
-fn inventory_view(
-  inventory: Inventory,
-  selected_tab: String,
-) -> Element(Message) {
   html.main([], [
-    html.h1([], [
-      html.input([
-        attribute.type_("text"),
-        attribute.minlength(1),
-        attribute.value(inventory.name),
-        event.on_change(fn(new_value) {
-          case new_value {
-            // TODO: surface the error?
-            "" -> NoOp
-            name ->
-              UserUpdatedInventory(inventory.name, fn(inventory) {
-                Inventory(..inventory, name:)
-              })
-          }
-        }),
+    html.div([attribute.class("header")], [
+      html.h1([], [
+        html.input([
+          attribute.type_("text"),
+          attribute.minlength(1),
+          attribute.value(inventory.name),
+          event.on_change(fn(new_value) {
+            case new_value {
+              // TODO: surface the error?
+              "" -> NoOp
+              name ->
+                UserUpdatedInventory(inventory.name, fn(inventory) {
+                  Inventory(..inventory, name:)
+                })
+            }
+          }),
+        ]),
       ]),
+      menu.popup_menu(
+        "inventory-options",
+        html.span([attribute.aria_label("Inventory options")], [html.text("v")]),
+        [event.on_click(UserChangedMenuState(!menu_open))],
+        menu_open,
+        [
+          menu.button(
+            label: "Create new inventory",
+            on_click: case creating_inventory {
+              False -> Ok(UserClickedCreateNewInventory)
+              True -> Error(Nil)
+            },
+          ),
+          menu.button(
+            label: "Delete current inventory",
+            on_click: case inventories |> dict.size {
+              size if size >= 2 ->
+                Ok(UserClickedDeleteInventory(selected_inventory))
+              _ -> Error(Nil)
+            },
+          ),
+          menu.radio(
+            label: "Inventories",
+            on_select: fn(selected_inventory) {
+              UserSelectedInventory(selected_inventory)
+            },
+            options: inventory_names
+              |> list.map(fn(inventory) {
+                menu.RadioItem(
+                  label: inventory,
+                  value: inventory,
+                  checked: inventory == selected_inventory,
+                  disabled: False,
+                )
+              }),
+          ),
+        ],
+      ),
     ]),
     html.label([], [
       html.text("Weight limit: "),

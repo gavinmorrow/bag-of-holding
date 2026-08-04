@@ -3,6 +3,22 @@ body {
   background-color: var(--background-color);
 }
 
+.header {
+  display: flex;
+  align-items: center;
+}
+
+.header h1 {
+  margin: 0;
+  flex: 1;
+}
+
+.header h1 input {
+  appearance: none;
+  border: none;
+  font-size: inherit;
+}
+
 [role="menu"] {
   display: none;
 }

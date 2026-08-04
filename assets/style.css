@@ -57,7 +57,12 @@ body {
   display: block;
 }
 
-[role^="menuitem" i]:not([aria-disabled="true"]):hover {
+[role^="menuitem"] {
+  width: 100%;
+  text-align: start;
+}
+
+[role^="menuitem"]:not([aria-disabled="true"]):hover {
   background-color: oklch(from var(--background-color-menu) calc(l * 90%) c h);
 }
 

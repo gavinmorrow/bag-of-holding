@@ -1,7 +1,7 @@
 # Bag of Holding
 
-This is a web app for managing a Dungeons & Dragons inventory. It is hosted at
-<https://bagofholding.gavinmorrow.com/>.
+This is a web app for managing a Dungeons & Dragons inventory. It is available
+at <https://bagofholding.gavinmorrow.com/>.
 
 Currently a work in progress.
 

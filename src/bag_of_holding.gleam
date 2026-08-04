@@ -7,6 +7,7 @@ import gleam/int
 import gleam/list
 import gleam/result
 import gleam/set.{type Set}
+import gleam/string
 import lustre
 import lustre/attribute
 import lustre/effect.{type Effect}
@@ -29,7 +30,7 @@ type Model {
 
 type LoadedModel {
   LoadedModel(
-    selected_inventory: Result(String, Nil),
+    selected_inventory: String,
     menu_open: Bool,
     selected_tab: String,
     storage: Storage,
@@ -69,20 +70,35 @@ fn init(_args: #()) -> #(Model, Effect(Message)) {
 
 fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
   case model, message {
-    _, StorageLoaded(storage:) -> #(
-      Loaded(LoadedModel(
-        selected_inventory: case dict.keys(storage.inventories) {
-          [inventory] -> Ok(inventory)
-          _ -> Error(Nil)
-        },
-        menu_open: False,
-        selected_tab: inventory_body_tab_id,
-        storage:,
-        creating_inventory: False,
-        deleting_inventories: set.new(),
-      )),
-      effect.none(),
-    )
+    model, StorageLoaded(storage:) ->
+      case dict.keys(storage.inventories) |> list.sort(string.compare) {
+        [selected_inventory, ..] -> #(
+          Loaded(LoadedModel(
+            selected_inventory:,
+            menu_open: False,
+            selected_tab: inventory_body_tab_id,
+            storage:,
+            creating_inventory: False,
+            deleting_inventories: set.new(),
+          )),
+          effect.none(),
+        )
+        [] -> #(
+          model,
+          storage.create_inventory(
+            storage,
+            fn(inventory) {
+              // Just reload storage, but with the inventory created
+              StorageLoaded(
+                storage: Storage(
+                  inventories: dict.from_list([#(inventory.name, inventory)]),
+                ),
+              )
+            },
+            StorageFailedToLoad,
+          ),
+        )
+      }
     _, StorageFailedToLoad(error:) -> #(FailedToLoad(error:), effect.none())
     _, PersistStatusUpdated(persisted: True) -> #(model, effect.none())
     _, PersistStatusUpdated(persisted: False) -> #(
@@ -94,12 +110,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
     _, PersistFailed(error:) -> #(FailedToLoad(error:), effect.none())
 
     Loaded(model), UserSelectedInventory(name:) -> #(
-      Loaded(
-        LoadedModel(..model, selected_inventory: case name {
-          "" -> Error(Nil)
-          _ -> Ok(name)
-        }),
-      ),
+      Loaded(LoadedModel(..model, selected_inventory: name)),
       effect.none(),
     )
     Loaded(model), UserChangedMenuState(open:) -> #(
@@ -130,7 +141,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
             for: inventory.name,
             into: model.storage.inventories,
           )),
-          selected_inventory: Ok(inventory.name),
+          selected_inventory: inventory.name,
           creating_inventory: False,
         ),
       ),
@@ -138,23 +149,34 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
     )
     _, InventoryCreationFailed(error:) -> todo
 
-    Loaded(model), UserClickedDeleteInventory(inventory:) -> #(
-      Loaded(
-        LoadedModel(
-          ..model,
-          selected_inventory: Error(Nil),
-          deleting_inventories: set.insert(
-            inventory,
-            into: model.deleting_inventories,
+    Loaded(model), UserClickedDeleteInventory(inventory:) -> {
+      case
+        model.storage.inventories
+        |> dict.filter(fn(name, _) { name != inventory })
+        |> dict.keys
+        |> list.sort(string.compare)
+        |> list.first
+      {
+        Ok(selected_inventory) -> #(
+          Loaded(
+            LoadedModel(
+              ..model,
+              selected_inventory:,
+              deleting_inventories: set.insert(
+                inventory,
+                into: model.deleting_inventories,
+              ),
+            ),
           ),
-        ),
-      ),
-      storage.delete_inventory(
-        inventory,
-        InventoryDeleted,
-        InventoryDeletionFailed(inventory, _),
-      ),
-    )
+          storage.delete_inventory(
+            inventory,
+            InventoryDeleted,
+            InventoryDeletionFailed(inventory, _),
+          ),
+        )
+        Error(Nil) -> #(Loaded(model), effect.none())
+      }
+    }
     Loaded(model), InventoryDeleted(inventory:) -> #(
       Loaded(
         LoadedModel(
@@ -210,10 +232,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
         old_name == new_inventory.name
       {
         True -> #(inventories, model.selected_inventory)
-        False -> #(
-          dict.delete(old_name, from: inventories),
-          Ok(new_inventory.name),
-        )
+        False -> #(dict.delete(old_name, from: inventories), new_inventory.name)
       }
       #(
         Loaded(
@@ -290,7 +309,11 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
         ),
         menu.button(
           label: "Delete current inventory",
-          on_click: result.map(selected_inventory, UserClickedDeleteInventory),
+          on_click: case inventories |> dict.size {
+            size if size >= 2 ->
+              Ok(UserClickedDeleteInventory(selected_inventory))
+            _ -> Error(Nil)
+          },
         ),
         menu.radio(
           label: "Inventories",
@@ -302,18 +325,16 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
               menu.RadioItem(
                 label: inventory,
                 value: inventory,
-                checked: Ok(inventory) == selected_inventory,
+                checked: inventory == selected_inventory,
                 disabled: False,
               )
             }),
         ),
       ],
     ),
-    case
-      selected_inventory |> result.try(dict.get(model.storage.inventories, _))
-    {
+    case dict.get(model.storage.inventories, selected_inventory) {
       Ok(inventory) -> inventory_view(inventory, selected_tab)
-      Error(Nil) -> element.none()
+      Error(Nil) -> element.text("Error: inventory file missing")
     },
   ])
 }

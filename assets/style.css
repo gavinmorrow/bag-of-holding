@@ -11,6 +11,11 @@ body {
   display: block;
 }
 
+button[aria-disabled="true"] {
+  color: grey;
+  /* FIXME: still has hover state */
+}
+
 .tabs {
   --border-color: #888;
   --border-selected-width: 2px;

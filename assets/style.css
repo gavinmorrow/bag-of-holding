@@ -37,6 +37,10 @@ body {
   border-top-right-radius: 0.25em;
 }
 
+#inventory-options {
+  font-size: x-large;
+}
+
 [role="menu"] {
   display: none;
 

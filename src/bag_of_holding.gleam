@@ -30,12 +30,18 @@ type Model {
 type LoadedModel {
   LoadedModel(
     selected_inventory: String,
-    menu_open: Bool,
+    selected_menu_item: Result(SelectedMenuItem, Nil),
     selected_tab: Result(String, Nil),
     storage: Storage,
     creating_inventory: Bool,
     deleting_inventories: Set(String),
   )
+}
+
+type SelectedMenuItem {
+  CreateInventory
+  DeleteInventory
+  InventorySelect(value: String)
 }
 
 type Message {
@@ -45,7 +51,7 @@ type Message {
   PersistFailed(error: storage.Error)
 
   UserSelectedInventory(name: String)
-  UserChangedMenuState(open: Bool)
+  UserChangedMenuState(selected_menu_item: Result(SelectedMenuItem, Nil))
   UserChangedTab(new_tab_id: String)
 
   UserClickedCreateNewInventory
@@ -74,7 +80,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
         [selected_inventory, ..] -> #(
           Loaded(LoadedModel(
             selected_inventory:,
-            menu_open: False,
+            selected_menu_item: Error(Nil),
             selected_tab: Error(Nil),
             storage:,
             creating_inventory: False,
@@ -110,10 +116,10 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
 
     Loaded(model), UserSelectedInventory(name:) -> #(
       Loaded(LoadedModel(..model, selected_inventory: name)),
-      effect.none(),
+      menu.close(UserChangedMenuState),
     )
-    Loaded(model), UserChangedMenuState(open:) -> #(
-      Loaded(LoadedModel(..model, menu_open: open)),
+    Loaded(model), UserChangedMenuState(selected_menu_item:) -> #(
+      Loaded(LoadedModel(..model, selected_menu_item:)),
       effect.none(),
     )
     Loaded(model), UserChangedTab(new_tab_id:) -> #(
@@ -124,11 +130,14 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
     Loaded(model), UserClickedCreateNewInventory if !model.creating_inventory -> {
       #(
         Loaded(LoadedModel(..model, creating_inventory: True)),
-        storage.create_inventory(
-          model.storage,
-          InventoryAdded,
-          InventoryCreationFailed,
-        ),
+        effect.batch([
+          storage.create_inventory(
+            model.storage,
+            InventoryAdded,
+            InventoryCreationFailed,
+          ),
+          menu.close(UserChangedMenuState),
+        ]),
       )
     }
     Loaded(model), InventoryAdded(inventory:) -> #(
@@ -167,11 +176,14 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
               ),
             ),
           ),
-          storage.delete_inventory(
-            inventory,
-            InventoryDeleted,
-            InventoryDeletionFailed(inventory, _),
-          ),
+          effect.batch([
+            storage.delete_inventory(
+              inventory,
+              InventoryDeleted,
+              InventoryDeletionFailed(inventory, _),
+            ),
+            menu.close(UserChangedMenuState),
+          ]),
         )
         Error(Nil) -> #(Loaded(model), effect.none())
       }
@@ -276,7 +288,7 @@ fn loading_view() -> Element(Message) {
 fn loaded_view(model: LoadedModel) -> Element(Message) {
   let LoadedModel(
     selected_inventory:,
-    menu_open:,
+    selected_menu_item: selected_menu_item,
     selected_tab:,
     storage: Storage(inventories:),
     creating_inventory:,
@@ -317,16 +329,25 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
       menu.popup_menu(
         "inventory-options",
         html.span([attribute.aria_label("Inventory options")], [
-          html.text(case menu_open {
-            False -> "▼"
-            True -> "▲"
+          html.text(case selected_menu_item {
+            Error(Nil) -> "▼"
+            Ok(_) -> "▲"
           }),
         ]),
-        [event.on_click(UserChangedMenuState(!menu_open))],
-        menu_open,
+        [
+          event.on_click(
+            UserChangedMenuState(case selected_menu_item {
+              Ok(_) -> Error(Nil)
+              Error(Nil) -> Ok(CreateInventory)
+            }),
+          ),
+        ],
+        selected_menu_item,
+        UserChangedMenuState,
         [
           menu.button(
             label: "Create new inventory",
+            id: CreateInventory,
             on_click: case creating_inventory {
               False -> Ok(UserClickedCreateNewInventory)
               True -> Error(Nil)
@@ -334,6 +355,7 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
           ),
           menu.button(
             label: "Delete current inventory",
+            id: DeleteInventory,
             on_click: case inventories |> dict.size {
               size if size >= 2 ->
                 Ok(UserClickedDeleteInventory(selected_inventory))
@@ -343,14 +365,13 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
           menu.separator(),
           menu.radio(
             label: "Inventories",
-            on_select: fn(selected_inventory) {
-              UserSelectedInventory(selected_inventory)
-            },
+            on_change: UserSelectedInventory,
             options: inventory_names
               |> list.map(fn(inventory) {
                 menu.RadioItem(
                   label: inventory,
                   value: inventory,
+                  id: InventorySelect(inventory),
                   checked: inventory == selected_inventory,
                   disabled: False,
                 )

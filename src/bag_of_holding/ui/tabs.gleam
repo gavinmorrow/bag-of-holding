@@ -1,5 +1,6 @@
 import gleam/dynamic/decode
 import gleam/list
+import gleam/result
 import lustre/attribute
 import lustre/element.{type Element}
 import lustre/element/html
@@ -14,7 +15,8 @@ pub type Tab(message) {
 /// All tabs must have unique ids.
 pub fn tabs(
   tabs: List(Tab(message)),
-  selected_tab: String,
+  default_tab: String,
+  selected_tab: Result(String, Nil),
   selected_message: fn(String) -> message,
 ) -> Element(message) {
   let first_tab = list.first(tabs)
@@ -24,6 +26,7 @@ pub fn tabs(
       tabs:,
       buttons: list.new(),
       panels: list.new(),
+      default_tab:,
       selected_tab:,
       selected_message:,
       prev_tab: Error(Nil),
@@ -41,7 +44,8 @@ fn tabs_loop(
   tabs tabs: List(Tab(message)),
   buttons buttons: List(Element(message)),
   panels panels: List(Element(message)),
-  selected_tab selected_tab: String,
+  default_tab default_tab: String,
+  selected_tab selected_tab: Result(String, Nil),
   selected_message selected_message: fn(String) -> message,
   prev_tab prev_tab: Result(Tab(message), Nil),
   first_tab first_tab: Result(Tab(message), Nil),
@@ -52,14 +56,15 @@ fn tabs_loop(
     [tab, ..rest] -> {
       let next_tab = list.first(rest)
 
-      let selected = tab.id == selected_tab
+      let selected = tab.id == result.unwrap(selected_tab, or: default_tab)
       let button =
         html.button(
           [
             attribute.id("tab-" <> tab.id),
             attribute.role("tab"),
             attribute.aria_selected(selected),
-            attribute.autofocus(selected),
+            // Don't autofocus on initial page load
+            attribute.autofocus(Ok(tab.id) == selected_tab),
             attribute.tabindex(case selected {
               True -> 0
               False -> -1
@@ -107,6 +112,7 @@ fn tabs_loop(
         tabs: rest,
         buttons: [button, ..buttons],
         panels: [panel, ..panels],
+        default_tab:,
         selected_tab:,
         selected_message:,
         prev_tab: Ok(tab),

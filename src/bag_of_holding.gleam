@@ -5,7 +5,6 @@ import bag_of_holding/ui/tabs.{tabs}
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 import lustre
@@ -32,7 +31,7 @@ type LoadedModel {
   LoadedModel(
     selected_inventory: String,
     menu_open: Bool,
-    selected_tab: String,
+    selected_tab: Result(String, Nil),
     storage: Storage,
     creating_inventory: Bool,
     deleting_inventories: Set(String),
@@ -76,7 +75,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
           Loaded(LoadedModel(
             selected_inventory:,
             menu_open: False,
-            selected_tab: inventory_body_tab_id,
+            selected_tab: Error(Nil),
             storage:,
             creating_inventory: False,
             deleting_inventories: set.new(),
@@ -118,7 +117,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
       effect.none(),
     )
     Loaded(model), UserChangedTab(new_tab_id:) -> #(
-      Loaded(LoadedModel(..model, selected_tab: new_tab_id)),
+      Loaded(LoadedModel(..model, selected_tab: Ok(new_tab_id))),
       effect.none(),
     )
 
@@ -396,6 +395,7 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
         inventory_backpack_tab(inventory),
         inventory_pouch_tab(inventory),
       ],
+      inventory_body_tab_id,
       selected_tab,
       UserChangedTab,
     ),

@@ -28,3 +28,6 @@ source_maps = true
 
 [tools.lustre.html]
 stylesheets = [{ href = "/style.css" }]
+
+[tools.lustre.dev]
+watch_mode = "polling"

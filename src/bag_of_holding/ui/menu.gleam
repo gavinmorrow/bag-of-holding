@@ -92,6 +92,14 @@ pub fn radio(
   Radio(label:, options:, on_select:)
 }
 
+pub fn group(label: String, items: List(Item(message))) -> Item(message) {
+  Group(label:, items:)
+}
+
+pub fn separator() -> Item(message) {
+  Separator
+}
+
 fn item_elem(item: Item(message)) -> Element(message) {
   case item {
     Button(label:, on_click:, tabindex:) ->
@@ -134,7 +142,7 @@ fn item_elem(item: Item(message)) -> Element(message) {
             let RadioItem(label:, value:, checked:, disabled:) = radio_item
             html.li(
               [
-                attribute.role("menuitemcheckbox"),
+                attribute.role("menuitemradio"),
                 attribute.aria_checked(case checked {
                   True -> "true"
                   False -> "false"

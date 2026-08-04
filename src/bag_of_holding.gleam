@@ -336,6 +336,7 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
               _ -> Error(Nil)
             },
           ),
+          menu.separator(),
           menu.radio(
             label: "Inventories",
             on_select: fn(selected_inventory) {

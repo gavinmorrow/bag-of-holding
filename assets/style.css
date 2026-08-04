@@ -1,11 +1,15 @@
-body {
+:root {
   --background-color: white;
+  --background-color-menu: #ddd;
+}
+
+body {
   background-color: var(--background-color);
 }
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: stretch;
 }
 
 .header h1 {
@@ -14,22 +18,68 @@ body {
 }
 
 .header h1 input {
-  appearance: none;
   border: none;
   font-size: inherit;
 }
 
+.header div {
+  height: auto;
+  position: relative;
+}
+.header button {
+  height: 100%;
+  border: none;
+  background-color: transparent;
+}
+.header button[aria-expanded="true"] {
+  background-color: var(--background-color-menu);
+  border-top-left-radius: 0.25em;
+  border-top-right-radius: 0.25em;
+}
+
 [role="menu"] {
   display: none;
+
+  position: absolute;
+  right: 0;
+  width: max-content;
+
+  margin: 0;
+  list-style-type: none;
+  padding: 0.25em;
+
+  background-color: var(--background-color-menu);
+  border-radius: 0.5em;
+  border-top-right-radius: 0;
 }
 
 [role="menu"].open {
   display: block;
 }
 
-button[aria-disabled="true"] {
+[role^="menuitem" i]:not([aria-disabled="true"]):hover {
+  background-color: oklch(from var(--background-color-menu) calc(l * 90%) c h);
+}
+
+[role="menu"] [role="group"] {
+  list-style-type: none;
+  padding-inline-start: 1.5em;
+}
+
+[role="menuitemradio"][aria-checked="true"],
+[role="menuitemcheckbox"][aria-checked="true"] {
+  list-style-type: "✓";
+}
+
+[role^="menuitem"][aria-disabled="true"] {
   color: grey;
   /* FIXME: still has hover state */
+}
+
+[role="menu"] [role="separator"] {
+  height: 1px;
+  background-color: grey;
+  margin: 0.25lh 0.25em;
 }
 
 .tabs {

@@ -1,7 +1,7 @@
 import bag_of_holding/inventory.{type Inventory, Inventory}
 import bag_of_holding/storage.{type Storage, Storage}
-import bag_of_holding/tabs.{tabs}
-import gleam/bool
+import bag_of_holding/ui/menu
+import bag_of_holding/ui/tabs.{tabs}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -30,6 +30,7 @@ type Model {
 type LoadedModel {
   LoadedModel(
     selected_inventory: Result(String, Nil),
+    menu_open: Bool,
     selected_tab: String,
     storage: Storage,
     creating_inventory: Bool,
@@ -44,6 +45,7 @@ type Message {
   PersistFailed(error: storage.Error)
 
   UserSelectedInventory(name: String)
+  UserChangedMenuState(open: Bool)
   UserChangedTab(new_tab_id: String)
 
   UserClickedCreateNewInventory
@@ -73,6 +75,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
           [inventory] -> Ok(inventory)
           _ -> Error(Nil)
         },
+        menu_open: False,
         selected_tab: inventory_body_tab_id,
         storage:,
         creating_inventory: False,
@@ -97,6 +100,10 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
           _ -> Ok(name)
         }),
       ),
+      effect.none(),
+    )
+    Loaded(model), UserChangedMenuState(open:) -> #(
+      Loaded(LoadedModel(..model, menu_open: open)),
       effect.none(),
     )
     Loaded(model), UserChangedTab(new_tab_id:) -> #(
@@ -224,6 +231,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
     _, NoOp
     | _, UserClickedCreateNewInventory(..)
     | _, UserSelectedInventory(..)
+    | _, UserChangedMenuState(..)
     | _, UserChangedTab(..)
     | _, InventoryAdded(..)
     | _, UserClickedDeleteInventory(..)
@@ -250,6 +258,7 @@ fn loading_view() -> Element(Message) {
 fn loaded_view(model: LoadedModel) -> Element(Message) {
   let LoadedModel(
     selected_inventory:,
+    menu_open:,
     selected_tab:,
     storage: Storage(inventories:),
     creating_inventory:,
@@ -259,71 +268,47 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
   let inventory_names =
     dict.keys(inventories)
     |> list.filter_map(fn(name) {
-      use <- bool.guard(
-        when: deleting_inventories |> set.contains(name),
-        return: Error(Nil),
-      )
-      Ok(html.option(
-        [
-          attribute.value(name),
-          attribute.selected(selected_inventory == Ok(name)),
-        ],
-        name,
-      ))
+      case set.contains(name, in: deleting_inventories) {
+        False -> Ok(name)
+        True -> Error(Nil)
+      }
     })
-  let inventory_name_options = case inventory_names {
-    [] -> [
-      html.option([attribute.value("")], "--No inventories found--"),
-    ]
-    _ -> [
-      html.option(
-        [
-          attribute.value(""),
-          attribute.selected(selected_inventory == Error(Nil)),
-        ],
-        "--Select an inventory--",
-      ),
-      ..inventory_names
-    ]
-  }
 
   html.div([], [
-    html.section([], [
-      html.button(
-        [
-          event.on_click(UserClickedCreateNewInventory),
-          attribute.disabled(creating_inventory),
-        ],
-        [
-          html.text("Create new inventory"),
-        ],
-      ),
-      html.button(
-        case model.selected_inventory {
-          Ok(inventory) -> [
-            event.on_click(UserClickedDeleteInventory(inventory:)),
-            attribute.disabled(False),
-          ]
-          Error(Nil) -> [attribute.disabled(True)]
-        },
-        [
-          html.text("Delete current inventory"),
-        ],
-      ),
-      html.div([], [
-        html.label([attribute.for("inventory-select")], [
-          html.text("Choose which inventory to view: "),
-        ]),
-        html.select(
-          [
-            attribute.id("inventory-select"),
-            attribute.name("inventory"),
-            event.on_change(UserSelectedInventory),
-          ],
-          inventory_name_options,
+    menu.popup_menu(
+      "Inventory options",
+      html.text("v"),
+      [event.on_click(UserChangedMenuState(!menu_open))],
+      menu_open,
+      [
+        menu.button(
+          label: "Create new inventory",
+          on_click: case creating_inventory {
+            False -> Ok(UserClickedCreateNewInventory)
+            True -> Error(Nil)
+          },
         ),
-      ]),
-    ]),
+        menu.button(
+          label: "Delete current inventory",
+          on_click: result.map(selected_inventory, UserClickedDeleteInventory),
+        ),
+        menu.radio(
+          label: "Inventories",
+          on_select: fn(selected_inventory) {
+            UserSelectedInventory(selected_inventory)
+          },
+          options: inventory_names
+            |> list.map(fn(inventory) {
+              menu.RadioItem(
+                label: inventory,
+                value: inventory,
+                checked: Ok(inventory) == selected_inventory,
+                disabled: False,
+              )
+            }),
+        ),
+      ],
+    ),
     case
       selected_inventory |> result.try(dict.get(model.storage.inventories, _))
     {

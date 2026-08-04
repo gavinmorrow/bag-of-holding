@@ -3,6 +3,14 @@ body {
   background-color: var(--background-color);
 }
 
+[role="menu"] {
+  display: none;
+}
+
+[role="menu"].open {
+  display: block;
+}
+
 .tabs {
   --border-color: #888;
   --border-selected-width: 2px;

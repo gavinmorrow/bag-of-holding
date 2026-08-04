@@ -31,14 +31,20 @@ body {
   border: none;
   background-color: transparent;
 }
-.header button[aria-expanded="true"] {
-  background-color: var(--background-color-menu);
-  border-top-left-radius: 0.25em;
-  border-top-right-radius: 0.25em;
-}
 
 #inventory-options {
   font-size: x-large;
+  border-radius: 0.25em;
+}
+
+#inventory-options:hover {
+  background-color: var(--background-color-menu);
+}
+
+#inventory-options[aria-expanded="true"] {
+  background-color: var(--background-color-menu);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 [role="menu"] {

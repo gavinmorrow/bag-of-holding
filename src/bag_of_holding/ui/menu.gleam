@@ -153,7 +153,7 @@ fn items_loop(
   first_item first_item: Result(id, Nil),
   last_item last_item: Result(id, Nil),
 ) -> List(Element(message)) {
-  let keyboard_handler = fn(on_click, next_item) {
+  let keyboard_handler = fn(on_click, prev_item, next_item) {
     keyboard_handler(
       on_select:,
       on_click:,
@@ -179,7 +179,7 @@ fn items_loop(
                     attribute.tabindex(-1),
                     attribute.autofocus(Ok(id) == selected),
                     conditional_on_click(on_click),
-                    keyboard_handler(on_click, first_id(in: items)),
+                    keyboard_handler(on_click, prev_item, first_id(in: items)),
                   ],
                   [html.text(label)],
                 ),
@@ -209,7 +209,7 @@ fn items_loop(
                     attribute.aria_haspopup("true"),
                     attribute.aria_expanded(open),
                     conditional_on_click(on_click),
-                    keyboard_handler(on_click, first_id(in: items)),
+                    keyboard_handler(on_click, prev_item, first_id(in: items)),
                   ],
                   [html.text(label)],
                 ),
@@ -242,31 +242,15 @@ fn items_loop(
               html.li([attribute.role("none")], [
                 html.ul(
                   [attribute.role("group"), attribute.aria_label(label)],
-                  list.map(options, fn(radio_item) {
-                    let RadioItem(label:, value:, id:, checked:, disabled:) =
-                      radio_item
-                    {
-                      let on_click = case disabled {
-                        False -> Ok(radio_on_change(value))
-                        True -> Error(Nil)
-                      }
-                      html.li(
-                        [
-                          attribute.role("menuitemradio"),
-                          attribute.aria_checked(case checked {
-                            True -> "true"
-                            False -> "false"
-                          }),
-                          attribute.tabindex(-1),
-                          attribute.autofocus(Ok(id) == selected),
-                          attribute.aria_disabled(disabled),
-                          conditional_on_click(on_click),
-                          keyboard_handler(on_click, first_id(in: items)),
-                        ],
-                        [html.text(label)],
-                      )
-                    }
-                  }),
+                  radio_items_loop(
+                    radio_items: options,
+                    elems: list.new(),
+                    radio_on_change:,
+                    selected:,
+                    keyboard_handler:,
+                    prev_item:,
+                    next_nonradio_item: first_id(in: items),
+                  ),
                 ),
               ]),
               ..elems
@@ -291,9 +275,12 @@ fn items_loop(
                     elems: list.new(),
                     selected:,
                     on_select:,
-                    prev_item: Error(Nil),
-                    first_item: first_id(in: items),
-                    last_item: last_id(in: items),
+                    // FIXME: next_item probably needs some fixing up
+                    // TODO: Actually test group. Can make the buttons
+                    // (create/delete) in menu a group.
+                    prev_item: prev_item,
+                    first_item:,
+                    last_item:,
                   ),
                 ),
               ]),
@@ -316,6 +303,65 @@ fn items_loop(
             last_item:,
           )
       }
+  }
+}
+
+fn radio_items_loop(
+  radio_items radio_items: List(RadioItem(id, value, message)),
+  elems elems: List(Element(message)),
+  radio_on_change radio_on_change: fn(value) -> message,
+  selected selected: Result(id, Nil),
+  keyboard_handler keyboard_handler: fn(
+    // on_click
+    Result(message, Nil),
+    // prev_item
+    Result(id, Nil),
+    // next_item
+    Result(id, Nil),
+  ) -> Attribute(message),
+  prev_item prev_item: Result(id, Nil),
+  next_nonradio_item next_nonradio_item: Result(id, Nil),
+) -> List(Element(message)) {
+  case radio_items {
+    [] -> list.reverse(elems)
+    [RadioItem(label:, value:, id:, checked:, disabled:), ..radio_items] -> {
+      let on_click = case disabled {
+        False -> Ok(radio_on_change(value))
+        True -> Error(Nil)
+      }
+      radio_items_loop(
+        radio_items:,
+        elems: [
+          html.li(
+            [
+              attribute.role("menuitemradio"),
+              attribute.aria_checked(case checked {
+                True -> "true"
+                False -> "false"
+              }),
+              attribute.tabindex(-1),
+              attribute.autofocus(Ok(id) == selected),
+              attribute.aria_disabled(disabled),
+              conditional_on_click(on_click),
+              keyboard_handler(
+                on_click,
+                prev_item,
+                list.first(radio_items)
+                  |> result.map(fn(item) { item.id })
+                  |> result.or(next_nonradio_item),
+              ),
+            ],
+            [html.text(label)],
+          ),
+          ..elems
+        ],
+        radio_on_change:,
+        selected:,
+        keyboard_handler:,
+        prev_item: Ok(id),
+        next_nonradio_item:,
+      )
+    }
   }
 }
 

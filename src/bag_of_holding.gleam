@@ -345,23 +345,25 @@ fn loaded_view(model: LoadedModel) -> Element(Message) {
         selected_menu_item,
         UserChangedMenuState,
         [
-          menu.button(
-            label: "Create new inventory",
-            id: CreateInventory,
-            on_click: case creating_inventory {
-              False -> Ok(UserClickedCreateNewInventory)
-              True -> Error(Nil)
-            },
-          ),
-          menu.button(
-            label: "Delete current inventory",
-            id: DeleteInventory,
-            on_click: case inventories |> dict.size {
-              size if size >= 2 ->
-                Ok(UserClickedDeleteInventory(selected_inventory))
-              _ -> Error(Nil)
-            },
-          ),
+          menu.group("Inventory options", [
+            menu.button(
+              label: "Create new inventory",
+              id: CreateInventory,
+              on_click: case creating_inventory {
+                False -> Ok(UserClickedCreateNewInventory)
+                True -> Error(Nil)
+              },
+            ),
+            menu.button(
+              label: "Delete current inventory",
+              id: DeleteInventory,
+              on_click: case inventories |> dict.size {
+                size if size >= 2 ->
+                  Ok(UserClickedDeleteInventory(selected_inventory))
+                _ -> Error(Nil)
+              },
+            ),
+          ]),
           menu.separator(),
           menu.radio(
             label: "Inventories",

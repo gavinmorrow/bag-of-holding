@@ -78,7 +78,11 @@ body {
 
 [role="menu"] [role="group"] {
   list-style-type: none;
-  padding-inline-start: 1.5em;
+  padding-inline-start: 0;
+}
+
+[role="menu"] [role="group"] > [role="menuitemradio"] {
+  margin-inline-start: 1.5em;
 }
 
 [role="menuitemradio"][aria-checked="true"],

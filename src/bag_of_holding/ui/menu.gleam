@@ -54,6 +54,7 @@ pub fn popup_menu(
       selected:,
       on_select:,
       prev_item: Error(Nil),
+      next_nongroup_item: Error(Nil),
       first_item: first_id(in: items),
       last_item: last_id(in: items),
     )
@@ -150,6 +151,7 @@ fn items_loop(
   selected selected: Result(id, Nil),
   on_select on_select: fn(Result(id, Nil)) -> message,
   prev_item prev_item: Result(id, Nil),
+  next_nongroup_item next_nongroup_item: Result(id, Nil),
   first_item first_item: Result(id, Nil),
   last_item last_item: Result(id, Nil),
 ) -> List(Element(message)) {
@@ -158,7 +160,7 @@ fn items_loop(
       on_select:,
       on_click:,
       prev_item:,
-      next_item:,
+      next_item: next_item |> result.or(next_nongroup_item),
       first_item:,
       last_item:,
     )
@@ -189,6 +191,7 @@ fn items_loop(
             selected:,
             on_select:,
             prev_item: Ok(id),
+            next_nongroup_item:,
             first_item:,
             last_item:,
           )
@@ -221,6 +224,7 @@ fn items_loop(
                     selected:,
                     on_select:,
                     prev_item: Error(Nil),
+                    next_nongroup_item: Error(Nil),
                     first_item: first_id(in: items),
                     last_item: last_id(in: items),
                   ),
@@ -231,6 +235,7 @@ fn items_loop(
             selected:,
             on_select:,
             prev_item: Ok(id),
+            next_nongroup_item:,
             first_item:,
             last_item:,
           )
@@ -257,13 +262,14 @@ fn items_loop(
             ],
             selected:,
             on_select:,
-            prev_item: list.first(options)
+            prev_item: list.last(options)
               |> result.map(fn(option) { option.id })
               |> result.or(prev_item),
+            next_nongroup_item:,
             first_item:,
             last_item:,
           )
-        Group(label:, items:) ->
+        Group(label:, items: group_items) ->
           items_loop(
             items:,
             elems: [
@@ -271,14 +277,12 @@ fn items_loop(
                 html.ul(
                   [attribute.role("group"), attribute.aria_label(label)],
                   items_loop(
-                    items:,
+                    items: group_items,
                     elems: list.new(),
                     selected:,
                     on_select:,
-                    // FIXME: next_item probably needs some fixing up
-                    // TODO: Actually test group. Can make the buttons
-                    // (create/delete) in menu a group.
                     prev_item: prev_item,
+                    next_nongroup_item: first_id(in: items),
                     first_item:,
                     last_item:,
                   ),
@@ -288,7 +292,8 @@ fn items_loop(
             ],
             selected:,
             on_select:,
-            prev_item: first_id(in: items) |> result.or(prev_item),
+            prev_item: last_id(in: group_items) |> result.or(prev_item),
+            next_nongroup_item:,
             first_item:,
             last_item:,
           )
@@ -299,6 +304,7 @@ fn items_loop(
             selected:,
             on_select:,
             prev_item:,
+            next_nongroup_item:,
             first_item:,
             last_item:,
           )
